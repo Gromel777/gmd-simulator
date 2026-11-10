@@ -1,0 +1,2896 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GMD mill learning simulator</title>
+<style>
+/* ==========================================================================
+ * styles.css — one visual system for the whole simulator.
+ * Direction: industrial red / black / white. Black and graphite carry the
+ * structure, white carries text, signal red marks primary actions and trips.
+ * Amber is kept only for "trip pending". Every colour is a token below; the
+ * canvases read the same tokens at start-up.
+ * ========================================================================== */
+
+:root {
+  color-scheme: dark;
+  /* neutrals */
+  --bg: #0d0d0d;
+  --surface: #171717;
+  --surface-2: #202020;
+  --inset: #080808;
+  --line: #2b2b2b;
+  --line-strong: #454545;
+  --text: #ffffff;
+  --muted: #b3b3b3;
+  --dim: #767676;
+  /* accent */
+  --red: #ff000f;
+  --red-dark: #b0000a;
+  --red-tint: #2a0507;
+  /* interaction */
+  --control: #ffffff;
+  --control-strong: #ffffff;
+  --control-fill: #232323;
+  /* state */
+  --run: #ffffff;
+  --pending: #ffb000;
+  --pending-bg: #2c2005;
+  --trip: #ff000f;
+  --trip-bg: #3a0306;
+  /* signals (canvas + legends) */
+  --sig-phaseA: #ff5c5c; --sig-phaseB: #6fd08c; --sig-phaseC: #5aa6ff;
+  --sig-phaseAlight: #ffaaa6; --sig-phaseBlight: #ade6bd; --sig-phaseClight: #a9ccff;
+  --sig-voltage: #e8e8e8; --sig-alpha: #ffab5e; --sig-beta: #c99bff; --sig-d: #ffd75e; --sig-q: #4fd6c6;
+  --sig-rotor: #ffc83d; --sig-stator: #6cc6ff; --sig-rotorVoltage: #d79bff; --sig-flux: #ff6fa8; --sig-psi: #ffa9cf;
+  --sig-cosPhi: #4fe0ff; --sig-power: #ffffff; --sig-returnPower: #e8c14d; --sig-throughput: #c79d74;
+  --sig-speed: #8fdcff; --sig-speedRef: #7a9bb0; --sig-torque: #ff8ed1; --sig-chargeTorque: #b58cff;
+  /* material */
+  --steel-1: #6b6b6b; --steel-2: #3d3d3d; --steel-3: #262626; --copper: #b8733a;
+  --pole-n: #e0101c; --pole-s: #9a9a9a; --ore-1: #9a948a; --ore-2: #7d776e; --ore-3: #b9b2a6;
+  /* type & shape */
+  --font: "ABBvoice", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --radius: 2px;
+  --gap: 10px;
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+  background: var(--bg);
+  color: var(--text);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--bg); }
+body.on-welcome { overflow: hidden; }
+h1, h2, h3 { font-weight: 700; margin: 0; }
+h1 { font-size: 19px; letter-spacing: -.01em; }
+h2 { font-size: 14px; }
+h3 { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+p { margin: 0; }
+[hidden] { display: none !important; }
+.hint { font-size: 11.5px; color: var(--muted); line-height: 1.5; margin-top: 8px; max-width: 72ch; }
+.hint.monitor { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* brand mark: a red square with a white ring motor cut-out; no third-party logo */
+.brand-mark { width: 30px; height: 30px; flex: none; background: var(--red); position: relative; display: inline-block; }
+.brand-mark::before { content: ""; position: absolute; inset: 7px; border: 3px solid #fff; border-radius: 50%; }
+.brand-mark::after { content: ""; position: absolute; left: 13px; top: 13px; width: 4px; height: 4px; background: #fff; border-radius: 50%; }
+
+/* ---------- page transitions ---------- */
+.fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 100; transition: opacity .38s ease; }
+.fade.on { opacity: 1; pointer-events: all; }
+@media (prefers-reduced-motion: reduce) { .fade { transition-duration: .01s; } }
+
+/* ---------- welcome ---------- */
+.welcome { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; overflow: auto; background: #000; }
+.welcome-bg { position: absolute; inset: -40px; background-size: cover; background-position: center 30%; filter: blur(14px) saturate(.9) brightness(.55); transform: scale(1.06); }
+.welcome::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, rgba(0,0,0,.88) 0%, rgba(0,0,0,.55) 55%, rgba(0,0,0,.25) 100%); }
+.welcome-card { position: relative; z-index: 1; width: min(640px, 100%); padding: 32px 36px 30px; background: rgba(10, 10, 10, .78); border-top: 4px solid var(--red); backdrop-filter: blur(4px); justify-self: start; margin-left: max(0px, 6vw); }
+.welcome-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
+.welcome h1 { font-size: 34px; line-height: 1.1; letter-spacing: -.02em; max-width: 18ch; }
+.welcome-lead { color: var(--muted); font-size: 15px; line-height: 1.5; margin-top: 10px; max-width: 54ch; }
+.welcome-steps { margin: 22px 0 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 12px; }
+.welcome-steps li { counter-increment: s; display: grid; grid-template-columns: 28px 1fr; gap: 10px; font-size: 14px; line-height: 1.5; color: #e6e6e6; }
+.welcome-steps li::before { content: counter(s); width: 24px; height: 24px; display: grid; place-items: center; background: var(--red); color: #fff; font-weight: 700; font-size: 12.5px; margin-top: 1px; }
+.welcome-keys { margin-top: 20px; font-size: 12.5px; color: var(--muted); }
+.welcome-note { margin-top: 8px; font-size: 12px; color: var(--dim); line-height: 1.5; }
+button.big { margin-top: 24px; padding: 12px 28px; font-size: 15px; }
+
+/* ---------- top bar ---------- */
+.topbar {
+  display: grid; grid-template-columns: minmax(240px, auto) 1fr auto; align-items: center; gap: 16px;
+  padding: 10px 14px; background: #000; border-bottom: 3px solid var(--red);
+  position: sticky; top: 0; z-index: 5;
+}
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand p { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.top-right { display: flex; align-items: center; gap: 8px; }
+.status-pill {
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--line-strong);
+  font-size: 13px; font-weight: 700; min-width: 134px; justify-content: center; white-space: nowrap;
+}
+.status-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+.status-pill[data-state=running]::before { background: #fff; box-shadow: 0 0 6px #fff; }
+.status-pill[data-state=pending] { border-color: var(--pending); color: var(--pending); }
+.status-pill[data-state=pending]::before { background: var(--pending); }
+.status-pill[data-state=tripped] { border-color: var(--trip); background: var(--trip); color: #fff; }
+.status-pill[data-state=tripped]::before { background: #fff; }
+
+/* ---------- protection annunciator ---------- */
+.annunciator { display: grid; grid-template-columns: repeat(8, minmax(62px, 1fr)); gap: 3px; max-width: 760px; justify-self: center; width: 100%; }
+.ann {
+  position: relative; overflow: hidden; border: 1px solid var(--line); background: var(--surface);
+  height: 30px; padding: 0 6px; display: flex; align-items: center; justify-content: center; gap: 5px;
+  font-size: 11.5px; color: var(--muted); text-align: center; cursor: default; white-space: nowrap;
+}
+.ann .lamp { width: 6px; height: 6px; border-radius: 50%; background: #3a3a3a; flex: none; }
+.ann b { display: none; font-weight: 700; }
+.ann .fill { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--pending); }
+.ann[data-state=pending] { border-color: var(--pending); color: var(--pending); background: var(--pending-bg); }
+.ann[data-state=pending] .lamp { background: var(--pending); }
+.ann[data-state=pending] b, .ann[data-state=tripped] b { display: inline; }
+.ann[data-state=tripped] { border-color: var(--trip); color: #fff; background: var(--trip); font-weight: 700; }
+.ann[data-state=tripped] .lamp { background: #fff; }
+.ann[data-state=active] { border-color: #6b5200; color: var(--pending); }
+@media (prefers-reduced-motion: no-preference) {
+  .ann[data-state=tripped].fresh { animation: blink .5s steps(1) 6; }
+  @keyframes blink { 50% { background: var(--trip-bg); } }
+}
+
+/* ---------- layout ---------- */
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr) 236px; gap: var(--gap); padding: var(--gap); align-items: start; }
+.sidebar { position: sticky; top: 64px; max-height: calc(100vh - 74px); overflow: auto; scrollbar-width: thin; }
+.content { min-width: 0; display: grid; gap: var(--gap); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; min-width: 0; }
+.sidebar .panel + .panel { margin-top: var(--gap); }
+.panel > header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; padding-left: 8px; border-left: 3px solid var(--red); }
+.two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--gap); align-items: start; }
+.two-col > * { min-width: 0; }
+
+/* collapsible panels */
+details.fold { padding: 0; }
+details.fold > summary { padding: 12px; font-size: 14px; font-weight: 700; color: var(--text); border-left: 3px solid var(--red); }
+details.fold > summary:hover { background: var(--surface-2); }
+details.fold[open] > summary { border-bottom: 1px solid var(--line); }
+details.fold > :not(summary) { margin-left: 12px; margin-right: 12px; }
+details.fold > :last-child { margin-bottom: 12px; }
+details.fold > .params { margin-top: 12px; }
+
+/* ---------- controls ---------- */
+button, select, input { font: inherit; color: inherit; }
+button {
+  background: var(--control-fill); border: 1px solid var(--line-strong); border-radius: var(--radius);
+  padding: 7px 10px; font-size: 12.5px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+button:hover:not(:disabled) { border-color: #fff; }
+button:disabled { opacity: .35; cursor: not-allowed; }
+button.primary { background: var(--red); border-color: var(--red); color: #fff; font-weight: 700; }
+button.primary:hover:not(:disabled) { background: #e0000d; border-color: #fff; }
+button.ghost { background: transparent; }
+button.danger-outline { border-color: var(--red-dark); }
+button svg { width: 12px; height: 12px; fill: currentColor; flex: none; }
+.button-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+select, input[type=number] { background: var(--inset); border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 5px 7px; font-size: 12.5px; }
+input[type=number] { width: 76px; text-align: right; }
+:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+
+.field { margin-top: 12px; }
+.params > .field:first-child { margin-top: 0; }
+.field-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.field-head output { color: var(--text); font-weight: 700; white-space: nowrap; }
+.field-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.field-row input[type=range] { flex: 1; }
+.field.disabled .field-head { opacity: .55; }
+
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; margin: 0; }
+input[type=range]::-webkit-slider-runnable-track { height: 3px; background: var(--line-strong); }
+input[type=range]::-moz-range-track { height: 3px; background: var(--line-strong); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 16px; margin-top: -6.5px; background: #fff; border: 0; box-shadow: inset 0 -3px 0 var(--red); }
+input[type=range]::-moz-range-thumb { width: 12px; height: 16px; background: #fff; border: 0; border-radius: 0; box-shadow: inset 0 -3px 0 var(--red); }
+input[type=range]:disabled { opacity: .4; }
+input[type=checkbox], input[type=radio] { accent-color: var(--red); margin: 0; }
+
+.choices { display: grid; gap: 6px; font-size: 12.5px; }
+.choices label, .check { display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12.5px; }
+.segmented { display: inline-flex; border: 1px solid var(--line-strong); overflow: hidden; }
+.segmented label { padding: 4px 10px; font-size: 12px; cursor: pointer; color: var(--muted); position: relative; }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented label:has(input:checked) { background: #fff; color: #000; font-weight: 700; }
+.segmented label:has(input:disabled) { cursor: not-allowed; opacity: .5; }
+.segmented label:has(input:focus-visible) { outline: 2px solid #fff; }
+
+.tripbox { white-space: pre-line; margin-top: 10px; padding: 8px 10px; background: var(--inset); border: 1px solid var(--line); font-size: 12px; min-height: 34px; }
+.tripbox[data-state=pending] { border-color: var(--pending); color: var(--pending); }
+.tripbox[data-state=tripped] { border-color: var(--trip); background: var(--trip-bg); color: #fff; }
+
+details { margin-top: 10px; }
+details.fold, details#ccPanel { margin-top: 0; }
+details > summary { cursor: pointer; font-size: 12.5px; color: var(--muted); list-style: none; display: flex; align-items: center; gap: 8px; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: ""; width: 0; height: 0; border-left: 5px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform .15s; }
+details[open] > summary::before { transform: rotate(90deg); }
+table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 6px; }
+th { color: var(--dim); font-weight: 400; text-align: left; }
+td, th { padding: 4px 3px; border-bottom: 1px solid var(--line); }
+td:not(:first-child), th:not(:first-child) { text-align: right; white-space: nowrap; }
+
+/* ---------- canvases ---------- */
+.stage { position: relative; aspect-ratio: 1; background: var(--inset); border: 1px solid var(--line); overflow: hidden; min-width: 0; }
+.graph { position: relative; height: 340px; background: var(--inset); border: 1px solid var(--line); cursor: crosshair; touch-action: pan-y; min-width: 0; }
+canvas { display: block; width: 100%; height: 100%; max-width: 100%; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 8px; }
+.toolbar .field { margin: 0; flex: 1 1 220px; }
+.toolbar .actions { display: flex; gap: 6px; }
+
+/* ---------- read-outs ---------- */
+.kv-list { display: grid; }
+.kv { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 4px 2px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.kv:last-child { border-bottom: 0; }
+.kv span { color: var(--muted); min-width: 0; }
+.kv b { font-weight: 700; white-space: nowrap; }
+.kv small { color: var(--dim); font-weight: 400; font-size: 11px; margin-left: 3px; }
+.kv[data-state=pending] b { color: var(--pending); }
+.kv[data-state=tripped] b { color: var(--trip); }
+.kv.status { padding: 6px 8px; margin-bottom: 4px; background: var(--inset); border: 1px solid var(--line); font-size: 13px; }
+.kv.status[data-state=tripped] { border-color: var(--trip); }
+
+.readouts.vector { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; margin-top: 8px; }
+.cell { background: var(--inset); border: 1px solid var(--line); padding: 4px 6px; min-width: 0; }
+.cell span { display: block; font-size: 10.5px; color: var(--dim); }
+.cell strong { display: block; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.note { padding: 9px 11px; background: var(--inset); border-left: 3px solid var(--line-strong); color: var(--muted); font-size: 11.5px; line-height: 1.5; margin-top: 8px; }
+.note.caution { border-left-color: var(--red); }
+.cursor-line { margin-top: 8px; font-size: 12px; color: var(--muted); min-height: 1.5em; overflow-wrap: anywhere; }
+.cursor-line b { color: var(--text); font-weight: 700; }
+.slow-banner { display: none; margin-top: 8px; font-size: 11.5px; color: var(--pending); }
+.slow-banner.visible { display: block; }
+
+.groups { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.group { border: 1px solid var(--line); padding: 7px 8px; background: var(--inset); }
+.signal { display: grid; grid-template-columns: auto 14px 1fr; align-items: start; gap: 6px; margin: 5px 0; font-size: 12px; cursor: pointer; }
+.signal input { margin-top: 2px; }
+.swatch { height: 3px; margin-top: 7px; }
+.signal small { display: block; color: var(--dim); font-size: 10.5px; line-height: 1.35; }
+
+.tooltip {
+  display: none; position: fixed; z-index: 120; max-width: 320px; background: #fff; color: #000;
+  border-left: 4px solid #000; padding: 8px 10px; font-size: 12px; line-height: 1.45;
+  white-space: pre-line; pointer-events: none; box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+}
+.tooltip.trip { border-left-color: var(--red); }
+.toast {
+  position: fixed; left: 50%; bottom: 28px; z-index: 110; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+  background: #fff; color: #000; border-left: 4px solid var(--red); padding: 11px 18px; font-size: 14px; font-weight: 700;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .5); transition: opacity .25s ease, transform .25s ease;
+}
+.toast.visible { opacity: 1; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+/* ---------- thyristors control ---------- */
+.cc-status { margin-top: 8px; font-size: 12.5px; color: var(--text); }
+.cc-box { min-width: 0; border: 1px solid var(--line); padding: 10px; background: var(--inset); }
+.cc-box h3 { margin: 0 0 8px; }
+.cc-scroll { overflow: auto; }
+.cc-full { margin-top: var(--gap); }
+.cc-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; margin-bottom: 8px; }
+.cc-head h3 { flex: 1 1 100%; margin: 0; }
+.cc-head .field { margin: 0; flex: 1 1 240px; }
+.cc-sub { margin-top: 16px !important; }
+.cc-timing { height: 220px; cursor: crosshair; touch-action: pan-y; }
+.cc-chart { height: 260px; touch-action: pan-y; }
+.cc-cab { display: flex; flex-wrap: wrap; gap: 6px; }
+.cc-cab-phase { flex: 1; min-width: 120px; background: var(--surface); border: 1px solid var(--line-strong); padding: 6px; font-size: 12px; }
+.cc-cab-group { margin-top: 6px; color: var(--muted); font-size: 11px; }
+.cc-cab-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; margin-top: 3px; }
+.cc-valve { text-align: center; border: 1px solid var(--line-strong); padding: 2px; font-size: 11px; color: var(--muted); background: var(--inset); }
+.cc-valve.on { border-color: #fff; color: #000; background: #fff; font-weight: 700; }
+.cc-checks { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11.5px; margin-top: 6px; }
+.cc-checks label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1360px) {
+  .layout { grid-template-columns: 230px minmax(0, 1fr); }
+  .sidebar.right { position: static; max-height: none; grid-column: 1 / -1; display: grid; grid-template-columns: 2fr 1fr; gap: var(--gap); }
+  .sidebar.right .panel + .panel { margin-top: 0; }
+  .sidebar.right .kv-list { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 18px; }
+}
+@media (max-width: 1100px) {
+  .topbar { grid-template-columns: 1fr auto; }
+  .annunciator { grid-column: 1 / -1; grid-row: 2; max-width: none; }
+}
+@media (max-width: 800px) {
+  .layout, .two-col, .groups, .sidebar.right { grid-template-columns: 1fr; }
+  .sidebar { position: static; max-height: none; }
+  .annunciator { grid-template-columns: repeat(4, 1fr); }
+  .readouts.vector { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sidebar.right .kv-list { grid-template-columns: 1fr; }
+  .graph { height: 260px; }
+  .topbar { position: static; }
+  .welcome-card { padding: 24px 20px; margin-left: 0; }
+  .welcome h1 { font-size: 26px; }
+}
+
+</style>
+</head>
+<body class="on-welcome">
+
+<!-- ===================== welcome screen ===================== -->
+<section id="welcome" class="welcome" aria-labelledby="welcomeTitle">
+  <div class="welcome-bg" style="background-image:url('data:image/jpeg;base64,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')"></div>
+  <div class="welcome-card">
+    <div class="welcome-top">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <select id="welcomeLanguage" aria-label="Language"><option value="en">English</option><option value="ru">Русский</option></select>
+    </div>
+    <h1 id="welcomeTitle" data-i="title"></h1>
+    <p class="welcome-lead" data-i="welcomeLead"></p>
+    <ol class="welcome-steps">
+      <li data-i="welcomeStep1"></li>
+      <li data-i="welcomeStep2"></li>
+      <li data-i="welcomeStep3"></li>
+      <li data-i="welcomeStep4"></li>
+      <li data-i="welcomeStep5"></li>
+    </ol>
+    <p class="welcome-keys" data-i="hotkeys"></p>
+    <p class="welcome-note" data-i="welcomeNote"></p>
+    <button id="enter" class="primary big" data-i="welcomeStart"></button>
+  </div>
+</section>
+
+<!-- ===================== main application ===================== -->
+<div id="app" class="app" hidden>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <div><h1 data-i="title"></h1><p data-i="subtitle"></p></div>
+  </div>
+  <div id="annunciator" class="annunciator" role="status" aria-live="polite"></div>
+  <div class="top-right">
+    <div id="statusPill" class="status-pill" role="status"></div>
+    <button id="help" class="ghost" data-i="help"></button>
+    <select id="language" aria-label="Language"><option value="en">English</option><option value="ru">Русский</option></select>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <section class="panel">
+      <header><h2 data-i="simulation"></h2></header>
+      <div class="button-grid">
+        <button id="start" class="primary"><svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z"/></svg><span data-i="start"></span></button>
+        <button id="stop"><svg viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8"/></svg><span data-i="stop"></span></button>
+        <button id="pause"><svg viewBox="0 0 12 12"><rect x="2" y="1.5" width="3" height="9"/><rect x="7" y="1.5" width="3" height="9"/></svg><span id="pauseText"></span></button>
+        <button id="step"><svg viewBox="0 0 12 12"><path d="M1.5 1.5l6 4.5-6 4.5z"/><rect x="8.5" y="1.5" width="2" height="9"/></svg><span data-i="step"></span></button>
+        <button id="tripReset" class="danger-outline"><span data-i="tripReset"></span></button>
+        <button id="reset"><span data-i="reset"></span></button>
+      </div>
+      <div id="tripStatus" class="tripbox" role="status"></div>
+      <p class="hint" data-i="tripHint"></p>
+    </section>
+
+    <section class="panel">
+      <header><h2 data-i="settings"></h2></header>
+      <div class="params" data-panel="operation"></div>
+      <p id="slowBanner" class="slow-banner" data-i="slowFrame"></p>
+    </section>
+
+    <section class="panel">
+      <header><h2 data-i="configuration"></h2></header>
+      <div class="params" data-panel="configuration"></div>
+      <details>
+        <summary data-i="limits"></summary>
+        <table><thead><tr><th data-i="parameter"></th><th data-i="nominal"></th><th data-i="tripThreshold"></th></tr></thead><tbody id="limitRows"></tbody></table>
+        <p class="hint" data-i="limitsHint"></p>
+      </details>
+    </section>
+
+    <section class="panel">
+      <header><h2 data-i="position"></h2></header>
+      <div class="field">
+        <div class="field-head"><label for="angle" data-i="mechanicalAngle"></label><output id="angleLabel"></output></div>
+        <div class="field-row"><input id="angle" type="range" min="0" max="360" step="0.1"><input id="angleNumber" type="number" min="0" max="360" step="0.1" aria-label="°"></div>
+      </div>
+      <p class="hint"><span data-i="electricalAngle"></span>: <b id="electricalAngle"></b></p>
+      <div class="choices" style="margin-top:8px">
+        <label><input type="radio" name="angleMode" value="stationary"> <span data-i="holdStationary"></span></label>
+        <label><input type="radio" name="angleMode" value="dq"> <span data-i="holdDq"></span></label>
+      </div>
+      <p class="hint" data-i="angleHint"></p>
+    </section>
+  </aside>
+
+  <main class="content">
+    <div class="two-col">
+      <section class="panel">
+        <header><h2 data-i="machine"></h2></header>
+        <div class="stage"><canvas id="machine"></canvas></div>
+        <p class="note" data-i="machineHelp"></p>
+      </section>
+      <section class="panel">
+        <header><h2 data-i="vectors"></h2></header>
+        <div class="stage"><canvas id="vectors"></canvas></div>
+        <div id="vectorNumbers" class="readouts vector"></div>
+        <p class="note" data-i="vectorHelp"></p>
+      </section>
+    </div>
+
+    <section class="panel">
+      <header><h2 data-i="graph"></h2></header>
+      <div class="toolbar">
+        <div class="field">
+          <div class="field-head"><label for="window" data-i="window"></label><output id="windowLabel"></output></div>
+          <input id="window" type="range" min="0" max="14" step="1">
+        </div>
+        <label class="check"><input id="yAuto" type="checkbox"><span data-i="yAuto"></span></label>
+        <div class="actions"><button id="exportCsv" data-i="exportCsv"></button><button id="exportPng" data-i="exportPng"></button></div>
+      </div>
+      <div class="graph"><canvas id="graph"></canvas></div>
+      <div id="cursor" class="cursor-line"></div>
+      <details open><summary data-i="signals"></summary><div id="signalGroups" class="groups"></div></details>
+      <p class="hint" data-i="graphHint"></p>
+    </section>
+
+    <div class="two-col">
+      <details class="panel fold" data-panel-box="stator">
+        <summary data-i="statorControl"></summary>
+        <div class="params" data-panel="stator"></div>
+        <p class="hint monitor" data-monitor="stator"></p>
+        <p class="hint" data-i="statorHint"></p>
+      </details>
+      <details class="panel fold" data-panel-box="rotor">
+        <summary data-i="rotorControl"></summary>
+        <div class="params" data-panel="rotor"></div>
+        <p class="hint monitor" data-monitor="rotor"></p>
+        <p class="hint" data-i="rotorHint"></p>
+      </details>
+    </div>
+
+    <details id="ccPanel" class="panel fold cc">
+      <summary data-i="ccTitle"></summary>
+      <p class="note caution" data-i="ccWarning"></p>
+      <p id="ccStatus" class="cc-status"></p>
+      <div class="two-col" style="margin-top:10px">
+        <section class="cc-box"><h3 data-i="ccSchematic"></h3><div id="ccSchematic" class="cc-scroll"></div></section>
+        <section class="cc-box"><h3 data-i="ccCabinet"></h3><div id="ccCabinet"></div></section>
+      </div>
+      <p class="hint" data-i="ccLegend"></p>
+      <section class="cc-box cc-full">
+        <div class="cc-head">
+          <h3 data-i="ccTiming"></h3>
+          <div class="field">
+            <div class="field-head"><label for="ccWindow" data-i="window"></label><output id="ccWindowLabel"></output></div>
+            <input id="ccWindow" type="range" min="0" max="5" step="1">
+          </div>
+          <button id="ccClear" type="button" data-i="ccClear"></button>
+        </div>
+        <div id="ccTimingBox" class="cc-timing"><canvas id="ccTiming"></canvas></div>
+        <p class="hint" data-i="ccTimingHint"></p>
+        <h3 class="cc-sub" data-i="ccChart"></h3>
+        <div class="cc-chart"><canvas id="ccChart"></canvas></div>
+        <div id="ccHover" class="cursor-line"></div>
+        <div id="ccChecks" class="cc-checks"></div>
+      </section>
+    </details>
+
+    <p class="note caution" data-i="warning"></p>
+  </main>
+
+  <aside class="sidebar right">
+    <section class="panel">
+      <header><h2 data-i="values"></h2></header>
+      <div id="machineValues" class="kv-list"></div>
+    </section>
+    <section class="panel">
+      <header><h2 data-i="layers"></h2></header>
+      <div class="choices">
+        <label><input id="showMaterial" type="checkbox"> <span data-i="material"></span></label>
+        <label><input id="showCurrents" type="checkbox"> <span data-i="currents"></span></label>
+        <label><input id="showFields" type="checkbox"> <span data-i="fields"></span></label>
+        <label><input id="showPhases" type="checkbox"> <span data-i="phaseVectors"></span></label>
+        <label><input id="showResult" type="checkbox"> <span data-i="resultant"></span></label>
+        <label><input id="showPowerFactor" type="checkbox"> <span data-i="showPowerFactor"></span></label>
+        <label><input id="showClarke" type="checkbox"> <span data-i="clarkeLayer"></span></label>
+        <label><input id="showPark" type="checkbox"> <span data-i="parkLayer"></span></label>
+        <label><input id="showAngles" type="checkbox"> <span data-i="angles"></span></label>
+      </div>
+    </section>
+  </aside>
+</div>
+</div>
+
+<div id="fade" class="fade" aria-hidden="true"></div>
+<div id="tooltip" class="tooltip" role="tooltip"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script>
+'use strict';
+(() => {
+/* ==========================================================================
+ * config.js — constants, invented machine scaling and signal catalogue.
+ * Educational, offline-only model. None of the values or protection logic
+ * is suitable for real equipment.
+ * ========================================================================== */
+
+const TWO_PI = 2 * Math.PI;
+
+/** Fixed model integration step, s. */
+const DT = 0.001;
+/** Particle (material) integration step, s. */
+const PARTICLE_DT = 0.005;
+/** Trend sampling period, s. */
+const SAMPLE_DT = 0.02;
+/** Trend retention, s. */
+const MAX_HISTORY = 300.1;
+/** Continuous time a protection condition must persist before tripping, s. */
+const TRIP_DELAY = 1;
+
+/** Reference configuration: invented values the scaling is built around. */
+const REF_POLES = 28;
+const REF_POWER = 22;          // MW at REF_POLES
+const REF_LOAD = 5000;         // t/h at REF_POLES
+const NOMINAL_SPEED = 12;      // rpm
+const MAX_SPEED = 18;          // rpm, setpoint range
+const RETURN_EFFICIENCY = 0.85;
+
+/** Pole-pair range offered by the configuration slider. */
+const POLE_MIN = 12;
+const POLE_MAX = 40;
+const POLE_STEP = 2;
+
+/** Stator current limit used by the speed controller, × nominal. Below the trip level. */
+const STATOR_CURRENT_LIMIT = 1.0;
+/** Armature-reaction coefficient used in the simplified voltage / flux equations. */
+const ARMATURE_REACTION = 0.35;
+/** Stator resistance coefficient, pu. */
+const STATOR_RESISTANCE = 0.08;
+/** Rotor flux saturation shape. */
+const SATURATION = 1.6;
+
+/** Graph time windows, s. */
+const WINDOWS = [0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 180, 300];
+
+/** Animation multiplier range (log10). */
+const ANIMATION_LOG_MIN = -3;
+const ANIMATION_LOG_MAX = Math.log10(20);
+
+/**
+ * Computes invented nominal values and protection thresholds for a pole-pair count.
+ * Power, load, stator current and torque scale with pole-pair count.
+ */
+function configuration(poles) {
+  const ratio = poles / REF_POLES;
+  const nominal = {
+    speed: NOMINAL_SPEED,
+    load: REF_LOAD * ratio,
+    power: REF_POWER * ratio,
+    statorCurrent: ratio,
+    statorVoltage: 1,
+    rotorCurrent: 1,
+    rotorVoltage: 1,
+    flux: 1,
+    torque: ratio,
+    frequency: poles * NOMINAL_SPEED / 60,
+    unit: 1,
+  };
+  const trip = {
+    speed: nominal.speed * 1.2,
+    load: nominal.load * 1.2,
+    power: nominal.power * 1.2,
+    statorCurrent: nominal.statorCurrent * 1.2,
+    statorVoltage: 1.12,
+    rotorCurrent: 1.2,
+    rotorVoltage: 1.2,
+    airgapFlux: 1.1,
+  };
+  return { ratio, nominal, trip, pulses: poles >= 20 ? 12 : 6 };
+}
+
+/* ==========================================================================
+ * model.js — machine state, coordinate transforms, controllers and mechanics.
+ * Pure model code: no DOM access. Everything here runs in the browser and
+ * in the Node test harness.
+ * ========================================================================== */
+
+/* ---------- small math helpers ---------- */
+
+/** Restricts a value to an inclusive range. */
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+/** Wraps a value into [0, max). */
+function wrap(v, max) { return ((v % max) + max) % max; }
+/** Wraps an angle into (-π, π]. */
+function wrapPi(a) { return Math.atan2(Math.sin(a), Math.cos(a)); }
+
+/* ---------- transforms ---------- */
+
+/** Balanced phase currents → amplitude-invariant Clarke α/β (+ zero sequence). */
+function clarke(a, b, c) {
+  return { alpha: 2 / 3 * (a - 0.5 * b - 0.5 * c), beta: 2 / 3 * (Math.sqrt(3) / 2) * (b - c), zero: (a + b + c) / 3 };
+}
+/** Inverse Clarke: α/β → phase quantities. */
+function inverseClarke(alpha, beta) {
+  return [alpha, -0.5 * alpha + Math.sqrt(3) / 2 * beta, -0.5 * alpha - Math.sqrt(3) / 2 * beta];
+}
+/** Stationary α/β → rotor-frame d/q. */
+function park(alpha, beta, angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return { d: alpha * c + beta * s, q: -alpha * s + beta * c };
+}
+/** Rotor-frame d/q → stationary α/β. */
+function inversePark(d, q, angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return { alpha: d * c - q * s, beta: d * s + q * c };
+}
+
+/* ---------- rotor flux ---------- */
+
+const SAT_NORM = Math.tanh(SATURATION);
+/** Saturated rotor flux, pu, for a rotor current. */
+function fluxFromCurrent(ir) { return Math.tanh(SATURATION * ir) / SAT_NORM; }
+/** Rotor current that produces a flux (inverse of fluxFromCurrent). */
+function currentForFlux(flux) { return Math.atanh(clamp(flux * SAT_NORM, 0, 0.9999)) / SATURATION; }
+
+/* ---------- state ---------- */
+
+/** Creates a fresh model state. */
+function createState(settings) {
+  const s = Object.assign(defaultSettings(), settings || {});
+  return Object.assign(s, {
+    run: false, paused: true, tripped: false, tripReason: null,
+    time: 0, angle: 0, speed: 0, speedRef: 0, ir: 0, ur: 0, flux: 0, id: 0, iq: 0, idCmdPu: 0,
+    torque: 0, chargeTorque: 0, power: 0, returnPower: 0,
+    speedIntegral: 0, rotorIntegral: 0, targetId: 0, targetIq: 0, targetIr: 0,
+    timers: {}, events: [], particles: [], particleAccumulator: 0, chargeLever: 0, signals: null,
+  });
+}
+
+/** Clears every dynamic quantity of a state, keeping settings. */
+function resetDynamics(S) {
+  Object.assign(S, {
+    run: false, paused: true, tripped: false, tripReason: null,
+    time: 0, angle: 0, speed: 0, speedRef: 0, ir: 0, ur: 0, flux: 0, id: 0, iq: 0, idCmdPu: 0,
+    torque: 0, chargeTorque: 0, power: 0, returnPower: 0,
+    speedIntegral: 0, rotorIntegral: 0, targetId: 0, targetIq: 0, targetIr: 0,
+    timers: {}, events: [], particleAccumulator: 0, chargeLever: 0,
+  });
+}
+
+/* ---------- simplified stator voltage model ---------- */
+
+/**
+ * Stator voltage in the rotor frame, pu:
+ *   Ud = Rs·Id − ω·Xa·Iq,  Uq = Rs·Iq + ω·(Φ + Xa·Id),  ω = n / n_nom
+ * Currents are given as fractions of nominal stator current.
+ */
+function statorVoltage(idpu, iqpu, flux, speed) {
+  const w = speed / NOMINAL_SPEED;
+  return {
+    ud: STATOR_RESISTANCE * idpu - ARMATURE_REACTION * w * iqpu,
+    uq: STATOR_RESISTANCE * iqpu + w * (flux + ARMATURE_REACTION * idpu),
+  };
+}
+
+/** Air-gap flux components, pu. */
+function airgapFlux(idpu, iqpu, flux) {
+  const d = flux + ARMATURE_REACTION * idpu, q = ARMATURE_REACTION * iqpu;
+  return { d, q, mag: Math.hypot(d, q) };
+}
+
+/**
+ * Signed angle φ from U to I, positive when current leads, for the direction of rotation.
+ * The sign is mirrored for negative electrical frequency so that "lag" keeps its meaning
+ * in reverse. Returns null when U or I is negligible.
+ */
+function phaseAngle(ud, uq, idpu, iqpu, speed) {
+  const um = Math.hypot(ud, uq), im = Math.hypot(idpu, iqpu);
+  if (um < 1e-4 || im < 1e-4) return null;
+  const raw = Math.atan2(ud * iqpu - uq * idpu, ud * idpu + uq * iqpu);
+  return speed < 0 ? -raw : raw;
+}
+
+/* ---------- electrical snapshot ---------- */
+
+/**
+ * Derived electrical quantities shared by signals, read-outs, protections and drawings.
+ * Computed once per step; subsystems read from it instead of recomputing transforms.
+ */
+function computeElectrical(S) {
+  const cfg = configuration(S.poles), base = cfg.nominal.statorCurrent;
+  const e = S.poles * S.angle;
+  const v = inversePark(S.id, S.iq, e);
+  const [ia, ib, ic] = inverseClarke(v.alpha, v.beta);
+  const ab = clarke(ia, ib, ic);
+  const dq = park(ab.alpha, ab.beta, e);
+  const idpu = dq.d / base, iqpu = dq.q / base;
+  const u = statorVoltage(idpu, iqpu, S.flux, S.speed);
+  const uab = inversePark(u.ud, u.uq, e);
+  const [ua, ub, uc] = inverseClarke(uab.alpha, uab.beta);
+  const phi = phaseAngle(u.ud, u.uq, idpu, iqpu, S.speed);
+  return {
+    cfg, base, ia, ib, ic, ua, ub, uc, umag: Math.hypot(u.ud, u.uq), ualpha: uab.alpha, ubeta: uab.beta, ud: u.ud, uq: u.uq,
+    phi, cosPhi: phi === null ? null : Math.cos(phi),
+    alpha: ab.alpha, beta: ab.beta, zero: ab.zero, id: dq.d, iq: dq.q, imag: Math.hypot(ab.alpha, ab.beta),
+    psi: airgapFlux(idpu, iqpu, S.flux).mag, frequency: S.poles * S.speed / 60,
+  };
+}
+
+/* ---------- controllers ---------- */
+
+/** PI step with conditional-integration anti-windup. Returns {output, integral}. */
+function piStep(kp, ki, error, integral, dt, lo, hi) {
+  const candidate = integral + ki * error * dt;
+  const raw = kp * error + candidate;
+  const output = clamp(raw, lo, hi);
+  const saturatedHigh = raw > hi, saturatedLow = raw < lo;
+  const keep = (!saturatedHigh && !saturatedLow) || (saturatedHigh && error < 0) || (saturatedLow && error > 0);
+  return { output, integral: keep ? clamp(candidate, lo, hi) : integral };
+}
+
+/**
+ * Rotor excitation: PI on rotor current, output = rotor voltage.
+ * Automatic target follows nominal flux with field weakening above nominal speed.
+ */
+function updateRotor(S, dt) {
+  const active = S.run && !S.tripped;
+  if (!active) S.targetIr = 0;
+  else if (S.rotorMode === 'manual') S.targetIr = S.manualIr;
+  else {
+    const w = Math.abs(S.speed) / NOMINAL_SPEED;
+    S.targetIr = currentForFlux(Math.min(1, 1 / Math.max(w, 1e-6)));
+  }
+  if (!active) { S.rotorIntegral = 0; S.ur = 0; }
+  else {
+    const r = piStep(S.rotorKp, S.rotorKi, S.targetIr - S.ir, S.rotorIntegral, dt, 0, 1.5);
+    S.rotorIntegral = r.integral; S.ur = r.output;
+  }
+  const equilibrium = Math.max(0, S.ur / S.resistance);
+  S.ir = Math.max(0, S.ir + (equilibrium - S.ir) * dt / (S.run ? 1.5 : 2));
+  S.flux = fluxFromCurrent(S.ir);
+}
+
+/**
+ * Stator current control.
+ *  Automatic: speed setpoint ramp → speed PI → Iq*, cos φ PI → Id*,
+ *             vector current limit with Id priority.
+ *  Manual: Id*, Iq* given as fractions of nominal current.
+ * The actual current follows the command with a 0.25 s lag.
+ */
+function updateStator(S, dt) {
+  const cfg = configuration(S.poles), base = cfg.nominal.statorCurrent;
+  let idpu = 0, iqpu = 0;
+  const active = S.run && !S.tripped;
+
+  // The speed reference ramps only while running with established excitation.
+  let rampRate = 0;
+  if (!active || S.statorMode !== 'auto') S.speedRef = S.speed;
+  else if (S.flux >= 0.5) {
+    const step = Math.max(0.01, S.ramp) * dt, delta = clamp(S.speedTarget - S.speedRef, -step, step);
+    S.speedRef += delta; rampRate = delta / dt;
+  }
+
+  if (!active) { S.speedIntegral = 0; S.idCmdPu = 0; }
+  else if (S.statorMode === 'manual') { idpu = S.manualId; iqpu = S.manualIq; }
+  else if (S.flux >= 0.1) {
+    // cos φ regulator on the d-axis current. φ is measured against ±I so that
+    // the regulator also works while regenerating.
+    const u = statorVoltage(S.id / base, S.iq / base, S.flux, S.speed);
+    const sign = (u.ud * S.id + u.uq * S.iq) < 0 ? -1 : 1;
+    const phi = phaseAngle(u.ud, u.uq, sign * S.id / base, sign * S.iq / base, S.speed);
+    if (phi !== null && Math.abs(S.speed) > 0.05) {
+      const target = Math.acos(clamp(S.cosPhiTarget, 0, 1)) * (S.cosPhiSense === 'lead' ? 1 : -1);
+      S.idCmdPu = clamp(S.idCmdPu + 1.5 * wrapPi(phi - target) * dt, -0.7, 0.3);
+    } else S.idCmdPu *= Math.max(0, 1 - dt / 0.5);
+    idpu = S.idCmdPu;
+    const iqLimit = Math.sqrt(Math.max(0, STATOR_CURRENT_LIMIT ** 2 - idpu ** 2));
+    // Acceleration feed-forward: torque needed to follow the ramp, as Iq fraction.
+    const feedForward = S.inertia * rampRate / (1.8 * Math.max(S.flux, 0.1));
+    const r = piStep(S.statorKp, S.statorKi, S.speedRef - S.speed, S.speedIntegral, dt, -iqLimit - feedForward, iqLimit - feedForward);
+    S.speedIntegral = r.integral; iqpu = clamp(r.output + feedForward, -iqLimit, iqLimit);
+  }
+  S.targetId = idpu * base; S.targetIq = iqpu * base;
+  S.id += (S.targetId - S.id) * dt / 0.25;
+  S.iq += (S.targetIq - S.iq) * dt / 0.25;
+}
+
+/**
+ * Mechanics. Torques in absolute units (nominal torque = configuration ratio).
+ *  Electromagnetic torque  M = Φ·Iq
+ *  Charge torque           geometric, from the particle model (or a smooth formula)
+ *  Friction                Coulomb + viscous, always opposing motion
+ */
+function updateMechanics(S, dt) {
+  const cfg = configuration(S.poles), ratio = cfg.ratio;
+  const loadFraction = S.load / Math.max(cfg.nominal.load, 1);
+  S.torque = S.flux * S.iq;
+  const chargeNominal = ratio * 0.62 * loadFraction;
+  if (S.chargeCoupling) S.chargeTorque = chargeNominal * S.chargeLever / CHARGE_LEVER_REF;
+  else S.chargeTorque = Math.abs(S.speed) < 0.002 ? 0 : Math.sign(S.speed) * chargeNominal;
+  const staticFriction = ratio * 0.1;
+  const friction = staticFriction + 0.04 * ratio * Math.abs(S.speed) / NOMINAL_SPEED;
+  const drive = S.torque - S.chargeTorque;
+  let net;
+  if (Math.abs(S.speed) < 0.002) net = Math.abs(drive) <= staticFriction ? 0 : drive - Math.sign(drive) * staticFriction;
+  else net = drive - Math.sign(S.speed) * friction;
+  const previous = S.speed;
+  let next = previous + net * 1.8 / (ratio * S.inertia) * dt;
+  if (Math.abs(previous) < 0.002 && net === 0) next = 0;
+  else if (previous !== 0 && Math.sign(previous) !== Math.sign(next) && Math.abs(drive) <= staticFriction) next = 0;
+  S.speed = next;
+  S.angle = wrap(S.angle + S.speed * TWO_PI / 60 * dt, TWO_PI);
+  S.power = REF_POWER * S.torque * S.speed / NOMINAL_SPEED;
+  S.returnPower = S.power < 0 ? -S.power * RETURN_EFFICIENCY : 0;
+}
+
+/* ==========================================================================
+ * particles.js — simplified grinding-charge model inside the drum.
+ * Coordinates are in units of the drum inner radius; +y points down
+ * (screen convention), gravity acts along +y. Positive mill speed turns
+ * the shell counter-clockwise on screen, lifting the charge on the right.
+ * The charge lever (mean x of the particles) gives the load torque.
+ * ========================================================================== */
+
+const PARTICLE_RADIUS = 0.0275;
+const PARTICLE_GRAVITY = 3.6;
+/** Mean charge lever at nominal speed and load, measured with the test harness. */
+const CHARGE_LEVER_REF = 0.584;
+
+/** Desired particle count for a load fraction of nominal. */
+function desiredParticles(S) {
+  const nominal = configuration(S.poles).nominal.load;
+  return Math.round(12 + 138 * clamp(S.load / Math.max(nominal, 1), 0, 1.5));
+}
+
+/** Creates a particle at a repeatable initial position near the drum bottom. */
+function createParticle(i) {
+  const columns = 15, row = Math.floor(i / columns), column = i % columns, r = PARTICLE_RADIUS;
+  return { x: (column - (columns - 1) / 2) * r * 2.1, y: 0.82 - row * r * 2.1, vx: 0, vy: 0, radius: r, tone: i % 3 };
+}
+
+function createParticles(S) {
+  const result = [];
+  for (let i = 0; i < desiredParticles(S); i++) result.push(createParticle(i));
+  return result;
+}
+
+/** Resolves contact between two particles (position correction + impulse with friction). */
+function particleCollision(a, b) {
+  let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+  const minimum = a.radius + b.radius;
+  if (d >= minimum) return;
+  if (d < 1e-8) { dx = 1e-6; dy = 0; d = 1e-6; }
+  const nx = dx / d, ny = dy / d, overlap = minimum - d;
+  a.x -= nx * overlap * 0.5; a.y -= ny * overlap * 0.5;
+  b.x += nx * overlap * 0.5; b.y += ny * overlap * 0.5;
+  const rvx = b.vx - a.vx, rvy = b.vy - a.vy, normal = rvx * nx + rvy * ny;
+  if (normal >= 0) return;
+  const impulse = -1.05 * normal / 2;
+  a.vx -= impulse * nx; a.vy -= impulse * ny; b.vx += impulse * nx; b.vy += impulse * ny;
+  const tx = -ny, ty = nx, tangent = rvx * tx + rvy * ty;
+  const friction = clamp(-tangent * 0.18, -impulse * 0.4, impulse * 0.4);
+  a.vx -= friction * tx; a.vy -= friction * ty; b.vx += friction * tx; b.vy += friction * ty;
+}
+
+/** Contact with the rotating shell wall. */
+function wallCollision(p, omega) {
+  const d = Math.hypot(p.x, p.y), maximum = 1 - p.radius;
+  if (d <= maximum || d < 1e-8) return;
+  const nx = p.x / d, ny = p.y / d;
+  p.x = nx * maximum; p.y = ny * maximum;
+  const tx = -ny, ty = nx, wallX = omega * p.y, wallY = -omega * p.x;
+  const normal = (p.vx - wallX) * nx + (p.vy - wallY) * ny;
+  if (normal > 0) { p.vx -= 1.05 * normal * nx; p.vy -= 1.05 * normal * ny; }
+  const tangent = (p.vx - wallX) * tx + (p.vy - wallY) * ty;
+  p.vx -= tangent * 0.45 * tx; p.vy -= tangent * 0.45 * ty;
+}
+
+/* Uniform grid for neighbour search: cell size = particle diameter. */
+const GRID_CELL = 2 * PARTICLE_RADIUS;
+const GRID_N = Math.ceil(2 / GRID_CELL) + 2;
+const gridHeads = new Int32Array(GRID_N * GRID_N);
+let gridNext = new Int32Array(256);
+
+function cellIndex(v) { return clamp(Math.floor((v + 1) / GRID_CELL) + 1, 0, GRID_N - 1); }
+
+/** Resolves all particle pairs using the grid: O(n) instead of O(n²). */
+function collideAll(list) {
+  if (gridNext.length < list.length) gridNext = new Int32Array(list.length * 2);
+  gridHeads.fill(-1);
+  for (let i = 0; i < list.length; i++) {
+    const c = cellIndex(list[i].y) * GRID_N + cellIndex(list[i].x);
+    gridNext[i] = gridHeads[c]; gridHeads[c] = i;
+  }
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i], cx = cellIndex(p.x), cy = cellIndex(p.y);
+    for (let oy = -1; oy <= 1; oy++) {
+      const yy = cy + oy; if (yy < 0 || yy >= GRID_N) continue;
+      for (let ox = -1; ox <= 1; ox++) {
+        const xx = cx + ox; if (xx < 0 || xx >= GRID_N) continue;
+        for (let j = gridHeads[yy * GRID_N + xx]; j !== -1; j = gridNext[j]) if (j > i) particleCollision(p, list[j]);
+      }
+    }
+  }
+}
+
+/** Advances gravity, collisions and the charge lever by one particle step. */
+function updateParticles(S, dt) {
+  const desired = desiredParticles(S);
+  while (S.particles.length < desired) S.particles.push(createParticle(S.particles.length));
+  while (S.particles.length > desired) S.particles.pop();
+  const omega = S.speed * TWO_PI / 60;
+  for (const p of S.particles) {
+    p.vy += PARTICLE_GRAVITY * dt; p.vx *= 0.9985; p.vy *= 0.9985;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    wallCollision(p, omega);
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    collideAll(S.particles);
+    for (const p of S.particles) wallCollision(p, omega);
+  }
+  let sum = 0;
+  for (const p of S.particles) sum += p.x;
+  S.chargeLever = S.particles.length ? sum / S.particles.length : 0;
+}
+
+/* ==========================================================================
+ * cyclo-model.js — educational one-way cycloconverter model.
+ * Ideal six-pulse antiparallel bridges (two groups shifted by 30° form a
+ * 12-pulse arrangement), fixed firing angle, no commutation overlap and no
+ * real voltage modulation. The output frequency equals the main model's
+ * electrical frequency f = p·n / 60. Pure model code: no DOM access.
+ * ========================================================================== */
+
+const CC = {
+  history: [], max: 12000, dt: 0.0001, frequency: 50, alpha: 30,
+  recording: false, checkState: {}, version: 0,
+};
+
+function ccReset() { CC.history = []; CC.version++; }
+
+/** Signed output frequency, Hz — identical to the machine electrical frequency. */
+function ccOutputHz(S) { return S.poles * S.speed / 60; }
+
+/** Electrical angle at a time slightly after the current model time. */
+function ccPhaseAt(S, t) { return S.poles * S.angle + TWO_PI * ccOutputHz(S) * (t - S.time); }
+
+/** Phase current setpoints at time t (from the Id* and Iq* commands). */
+function ccTargets(S, t) {
+  const v = inversePark(S.targetId, S.targetIq, ccPhaseAt(S, t));
+  return inverseClarke(v.alpha, v.beta);
+}
+
+/**
+ * State of one six-pulse bridge pair: the conducting supply pair changes at natural
+ * line-voltage crossings delayed by the firing angle α. P conducts positive current,
+ * N negative current.
+ */
+function ccBridge(S, t, shift, current) {
+  if (!S.run || S.tripped || Math.abs(current) < 1e-5) return { p: -1, n: -1, gate: -1, sector: -1, group: 0 };
+  const x = wrap(TWO_PI * CC.frequency * t + shift - Math.PI / 6 - CC.alpha * Math.PI / 180, TWO_PI);
+  const sector = Math.floor(x / (Math.PI / 3)) % 6;
+  const pairs = [[0, 1], [0, 2], [1, 2], [1, 0], [2, 0], [2, 1]];
+  const within = x % (Math.PI / 3);
+  return {
+    p: pairs[sector][0], n: pairs[sector][1],
+    gate: within < TWO_PI * CC.frequency * CC.dt ? sector : -1,
+    sector, group: current > 0 ? 1 : -1,
+  };
+}
+
+/** Complete converter snapshot at time t. */
+function ccSnapshot(S, t) {
+  const target = ccTargets(S, t), groups = configuration(S.poles).pulses === 12 ? 2 : 1;
+  const states = [], currents = [];
+  for (let out = 0; out < 3; out++) {
+    states[out] = [];
+    for (let g = 0; g < groups; g++) {
+      const b = ccBridge(S, t, g ? -Math.PI / 6 : 0, target[out]), i = Math.abs(target[out]) / groups, c = [0, 0, 0];
+      states[out][g] = b;
+      if (b.p >= 0) { c[b.p] += i; c[b.n] -= i; }
+      currents.push(c);
+    }
+  }
+  return { t, target, states, currents, groups };
+}
+
+/** Model hook: records ten 0.1 ms snapshots covering the next model step while recording. */
+function ccRecord(S) {
+  if (!CC.recording) return;
+  for (let k = 1; k <= 10; k++) CC.history.push(ccSnapshot(S, S.time + k * CC.dt));
+  if (CC.history.length > CC.max) CC.history.splice(0, CC.history.length - CC.max);
+  CC.version++;
+}
+
+/** Thyristor designation inside a bridge. */
+function ccThyristorId(group, side, phase) {
+  return `${group > 0 ? 'P' : 'N'}${side === 0 ? [1, 3, 5][phase] : [4, 6, 2][phase]}`;
+}
+
+/* ==========================================================================
+ * registry.js — subsystem registry.
+ *
+ * Each subsystem declares in one place:
+ *   params       user settings → state defaults, persistence and generated controls
+ *   signals      trend signals → graph, signal picker, cursor read-out, CSV
+ *   protections  trip conditions → protection logic, annunciator, limits table
+ *   readouts     "Machine values" entries
+ *   panel        optional control panel (title, hint, live monitor line)
+ *   before/step  model hooks, called in registration order every 1 ms step
+ *
+ * Adding a signal, protection or setting is one entry here; nothing else
+ * needs to change. Pure model code: no DOM access.
+ * ========================================================================== */
+
+const SUBSYSTEMS = [];
+const SIGNAL_GROUPS = ['groupStator', 'groupTransforms', 'groupRotor', 'groupMachine'];
+const PANEL_IDS = ['operation', 'configuration', 'stator', 'rotor'];
+
+function defineSubsystem(def) {
+  SUBSYSTEMS.push(Object.assign({ params: [], signals: [], protections: [], readouts: [], panel: null }, def));
+}
+
+/* ---------- shared formatting helpers for declarations ---------- */
+const nominalOf = key => cfg => cfg.nominal[key];
+const tripOf = key => cfg => cfg.trip[key];
+const one = () => 1;
+
+/* ======================= subsystem declarations ======================= */
+
+defineSubsystem({
+  id: 'machine',
+  params: [
+    { key: 'poles', default: REF_POLES, panel: 'configuration', type: 'range', label: 'polePairs', min: POLE_MIN, max: POLE_MAX, step: POLE_STEP,
+      resetsModel: true, enabled: S => !S.run && isAtRest(S), format: v => `${v} (2p = ${2 * v})`, hint: 'poleHint' },
+    { key: 'inertia', default: 1, panel: 'configuration', type: 'range', label: 'inertia', min: 0.5, max: 3, step: 0.1, format: v => `×${fmt(v, 1)}` },
+  ],
+  readouts: [
+    { key: 'frequency', order: 1, value: (S, e) => e.frequency, unit: 'Hz', digits: 3 },
+  ],
+});
+
+defineSubsystem({
+  id: 'excitation',
+  panel: { id: 'rotor', title: 'rotorControl', hint: 'rotorHint', monitor: S => `Ir ${fmt(S.ir, 3)} / Ir* ${fmt(S.targetIr, 3)} / Ur ${fmt(S.ur, 3)}` },
+  params: [
+    { key: 'rotorMode', default: 'auto', panel: 'rotor', type: 'choice', options: [['auto', 'rotorAuto'], ['manual', 'rotorManual']],
+      onChange: (S, next) => {
+        if (next === 'manual') S.manualIr = S.targetIr;
+        const target = S.run ? (next === 'manual' ? S.manualIr : S.targetIr) : 0;
+        S.rotorIntegral = clamp(S.ur - S.rotorKp * (target - S.ir), 0, 1.5);
+      } },
+    { key: 'manualIr', default: 1, panel: 'rotor', type: 'range', text: 'Ir*', min: 0, max: 1.5, step: 0.01, digits: 2,
+      enabled: S => S.rotorMode === 'manual', shown: S => S.targetIr },
+    { key: 'rotorKp', default: 1.2, panel: 'rotor', type: 'range', text: 'Kp', min: 0, max: 4.5, step: 0.05, digits: 2 },
+    { key: 'rotorKi', default: 0.5, panel: 'rotor', type: 'range', text: 'Ki', min: 0, max: 3, step: 0.05, digits: 2 },
+    { key: 'resistance', default: 1, panel: 'rotor', type: 'range', label: 'resistance', min: 0.2, max: 2.25, step: 0.05, digits: 2 },
+  ],
+  signals: [
+    { key: 'ir', label: 'Ir', group: 'groupRotor', desc: 'descIr', color: 'rotor', scale: 'rotorCurrent', unit: 'pu', checked: true, value: S => S.ir },
+    { key: 'ur', label: 'Ur', group: 'groupRotor', desc: 'descUr', color: 'rotorVoltage', scale: 'rotorVoltage', unit: 'pu', value: S => S.ur },
+    { key: 'flux', label: 'Φ', group: 'groupRotor', desc: 'descFlux', color: 'flux', scale: 'flux', unit: 'pu', checked: true, value: S => S.flux },
+  ],
+  protections: [
+    { key: 'tripRotor', short: 'annRotor', active: (S, cfg) => S.ir > cfg.trip.rotorCurrent,
+      limit: { label: 'rotorCurrent', unit: 'pu', digits: 2, nominal: nominalOf('rotorCurrent'), trip: tripOf('rotorCurrent') } },
+    { key: 'tripVoltage', short: 'annVoltage', active: (S, cfg) => S.ur > cfg.trip.rotorVoltage,
+      limit: { label: 'rotorVoltageName', unit: 'pu', digits: 2, nominal: nominalOf('rotorVoltage'), trip: tripOf('rotorVoltage') } },
+  ],
+  readouts: [
+    { key: 'rotorCurrent', order: 12, value: S => S.ir, unit: 'pu', digits: 3, protection: 'tripRotor' },
+    { key: 'rotorVoltageName', order: 13, value: S => S.ur, unit: 'pu', digits: 3, protection: 'tripVoltage' },
+    { key: 'flux', order: 14, value: S => S.flux, unit: 'pu', digits: 3 },
+  ],
+  step: (S, dt) => updateRotor(S, dt),
+});
+
+defineSubsystem({
+  id: 'statorControl',
+  panel: {
+    id: 'stator', title: 'statorControl', hint: 'statorHint',
+    monitor: S => { const b = configuration(S.poles).nominal.statorCurrent; return `Id ${fmt(S.id / b, 3)} / Iq ${fmt(S.iq / b, 3)} · Id* ${fmt(S.targetId / b, 3)} / Iq* ${fmt(S.targetIq / b, 3)} · n* ${fmt(S.speedRef, 2)} ${unit('rpm')}`; },
+  },
+  params: [
+    { key: 'statorMode', default: 'auto', panel: 'stator', type: 'choice', options: [['auto', 'statorAuto'], ['manual', 'statorManual']],
+      onChange: (S, next) => {
+        const base = configuration(S.poles).nominal.statorCurrent;
+        if (next === 'manual') { S.manualId = S.targetId / base; S.manualIq = S.targetIq / base; }
+        else { S.speedRef = S.speed; S.idCmdPu = S.targetId / base; S.speedIntegral = clamp(S.targetIq / base - S.statorKp * (S.speedRef - S.speed), -1, 1); }
+      } },
+    { key: 'manualId', default: 0, panel: 'stator', type: 'range', text: 'Id* / IN', min: -1.5, max: 1.5, step: 0.01, digits: 2,
+      enabled: S => S.statorMode === 'manual', shown: S => S.targetId / configuration(S.poles).nominal.statorCurrent },
+    { key: 'manualIq', default: 0, panel: 'stator', type: 'range', text: 'Iq* / IN', min: -1.5, max: 1.5, step: 0.01, digits: 2,
+      enabled: S => S.statorMode === 'manual', shown: S => S.targetIq / configuration(S.poles).nominal.statorCurrent },
+    { key: 'cosPhiTarget', default: 1, panel: 'stator', type: 'range', label: 'cosPhiTarget', min: 0.8, max: 1, step: 0.01, digits: 2,
+      enabled: S => S.statorMode === 'auto' },
+    { key: 'cosPhiSense', default: 'lag', panel: 'stator', type: 'segmented', label: 'sense', options: [['lag', 'pfLag'], ['lead', 'pfLead']],
+      enabled: S => S.statorMode === 'auto' },
+    { key: 'statorKp', default: 0.16, panel: 'stator', type: 'range', text: 'Kp', min: 0, max: 0.75, step: 0.01, digits: 2, enabled: S => S.statorMode === 'auto' },
+    { key: 'statorKi', default: 0.045, panel: 'stator', type: 'range', text: 'Ki', min: 0, max: 0.225, step: 0.005, digits: 3, enabled: S => S.statorMode === 'auto' },
+  ],
+  signals: [
+    { key: 'ia', label: 'Ia', group: 'groupStator', desc: 'descIa', color: 'phaseA', scale: 'statorCurrent', unit: 'pu', checked: true },
+    { key: 'ib', label: 'Ib', group: 'groupStator', desc: 'descIb', color: 'phaseB', scale: 'statorCurrent', unit: 'pu', checked: true },
+    { key: 'ic', label: 'Ic', group: 'groupStator', desc: 'descIc', color: 'phaseC', scale: 'statorCurrent', unit: 'pu', checked: true },
+    { key: 'ua', label: 'Ua', group: 'groupStator', desc: 'descUa', color: 'phaseAlight', scale: 'statorVoltage', unit: 'pu' },
+    { key: 'ub', label: 'Ub', group: 'groupStator', desc: 'descUb', color: 'phaseBlight', scale: 'statorVoltage', unit: 'pu' },
+    { key: 'uc', label: 'Uc', group: 'groupStator', desc: 'descUc', color: 'phaseClight', scale: 'statorVoltage', unit: 'pu' },
+    { key: 'umag', label: '|U|', group: 'groupStator', desc: 'descUmag', color: 'voltage', scale: 'statorVoltage', unit: 'pu' },
+    { key: 'alpha', label: 'Iα', group: 'groupTransforms', desc: 'descAlpha', color: 'alpha', scale: 'statorCurrent', unit: 'pu' },
+    { key: 'beta', label: 'Iβ', group: 'groupTransforms', desc: 'descBeta', color: 'beta', scale: 'statorCurrent', unit: 'pu' },
+    { key: 'id', label: 'Id', group: 'groupTransforms', desc: 'descId', color: 'd', scale: 'statorCurrent', unit: 'pu' },
+    { key: 'iq', label: 'Iq', group: 'groupTransforms', desc: 'descIq', color: 'q', scale: 'statorCurrent', unit: 'pu', checked: true },
+    { key: 'psi', label: '|Ψδ|', group: 'groupRotor', desc: 'descPsi', color: 'psi', scale: 'flux', unit: 'pu' },
+    { key: 'cosPhi', label: 'cos φ', group: 'groupMachine', desc: 'descCosPhi', color: 'cosPhi', scale: 'unit', unit: '' },
+  ],
+  protections: [
+    { key: 'tripStator', short: 'annStator', active: (S, cfg) => Math.hypot(S.id, S.iq) > cfg.trip.statorCurrent,
+      limit: { label: 'statorCurrent', unit: 'IN', digits: 2, nominal: one, trip: cfg => cfg.trip.statorCurrent / cfg.nominal.statorCurrent } },
+    { key: 'tripStatorVoltage', short: 'annStatorVoltage', active: (S, cfg, e) => e.umag > cfg.trip.statorVoltage,
+      limit: { label: 'statorVoltage', unit: 'pu', digits: 2, nominal: one, trip: tripOf('statorVoltage') } },
+    { key: 'tripFlux', short: 'annFlux', active: (S, cfg, e) => e.psi > cfg.trip.airgapFlux,
+      limit: { label: 'psi', unit: 'pu', digits: 2, nominal: one, trip: tripOf('airgapFlux') } },
+  ],
+  readouts: [
+    { key: 'powerFactor', order: 5, value: (S, e) => e.cosPhi === null ? tr('pfUndefined') : `${fmt(e.cosPhi, 3)} ${tr(Math.abs(e.phi) < 0.01 ? 'pfUnity' : e.phi < 0 ? 'pfLag' : 'pfLead')}` },
+    { key: 'statorCurrent', order: 10, value: (S, e) => Math.hypot(S.id, S.iq) / e.base, unit: 'IN', digits: 3, protection: 'tripStator' },
+    { key: 'statorVoltage', order: 11, value: (S, e) => e.umag, unit: 'pu', digits: 3, protection: 'tripStatorVoltage' },
+    { key: 'psi', order: 15, value: (S, e) => e.psi, unit: 'pu', digits: 3, protection: 'tripFlux' },
+  ],
+  step: (S, dt) => updateStator(S, dt),
+});
+
+defineSubsystem({
+  id: 'mechanics',
+  params: [
+    { key: 'speedTarget', default: 6, panel: 'operation', type: 'range', label: 'speedTarget', min: -MAX_SPEED, max: MAX_SPEED, step: 0.1, number: true, digits: 1, unit: 'rpm' },
+    { key: 'ramp', default: 0.8, panel: 'operation', type: 'range', label: 'ramp', min: 0.1, max: 3, step: 0.1, digits: 1, unit: 'rpm/s' },
+  ],
+  signals: [
+    { key: 'power', label: 'P', group: 'groupMachine', desc: 'descPower', color: 'power', scale: 'power', unit: 'MW', checked: true, value: S => S.power },
+    { key: 'returnPower', label: 'P ret', group: 'groupMachine', desc: 'descReturn', color: 'returnPower', scale: 'power', unit: 'MW', value: S => S.returnPower },
+    { key: 'speed', label: 'n', group: 'groupMachine', desc: 'descSpeed', color: 'speed', scale: 'speed', unit: 'rpm', value: S => S.speed },
+    { key: 'speedRef', label: 'n*', group: 'groupMachine', desc: 'descSpeedRef', color: 'speedRef', scale: 'speed', unit: 'rpm', dashed: true, value: S => S.speedRef },
+    { key: 'torque', label: 'M', group: 'groupMachine', desc: 'descTorque', color: 'torque', scale: 'torque', unit: 'pu', value: S => S.torque },
+  ],
+  protections: [
+    { key: 'tripSpeed', short: 'annSpeed', active: (S, cfg) => Math.abs(S.speed) > cfg.trip.speed,
+      limit: { label: 'speed', unit: 'rpm', digits: 1, symmetric: true, nominal: nominalOf('speed'), trip: tripOf('speed') } },
+    { key: 'tripPower', short: 'annPower', active: (S, cfg) => Math.abs(S.power) > cfg.trip.power,
+      limit: { label: 'power', unit: 'MW', digits: 1, symmetric: true, nominal: nominalOf('power'), trip: tripOf('power') } },
+  ],
+  readouts: [
+    { key: 'speed', order: 2, value: S => S.speed, unit: 'rpm', digits: 2, protection: 'tripSpeed' },
+    { key: 'speedRef', order: 3, value: S => S.speedRef, unit: 'rpm', digits: 2 },
+    { key: 'power', order: 4, value: S => S.power, unit: 'MW', digits: 2, protection: 'tripPower' },
+    { key: 'returnPower', order: 6, value: S => S.returnPower, unit: 'MW', digits: 2 },
+    { key: 'torque', order: 7, value: (S, e) => S.torque / e.cfg.ratio, unit: 'pu', digits: 3 },
+  ],
+  step: (S, dt) => updateMechanics(S, dt),
+});
+
+defineSubsystem({
+  id: 'charge',
+  params: [
+    { key: 'load', default: 2500, panel: 'operation', type: 'range', label: 'load', min: 0, step: 50, number: true, digits: 0, unit: 't/h',
+      max: S => Math.ceil(configuration(S.poles).nominal.load * 1.5 / 50) * 50 },
+    { key: 'chargeCoupling', default: true, panel: 'configuration', type: 'check', label: 'chargeCoupling', hint: 'chargeHint' },
+  ],
+  signals: [
+    { key: 'throughput', label: 'Q', group: 'groupMachine', desc: 'descThroughput', color: 'throughput', scale: 'load', unit: 't/h',
+      value: S => S.load * Math.abs(S.speed) / NOMINAL_SPEED },
+    { key: 'chargeTorque', label: 'M load', group: 'groupMachine', desc: 'descChargeTorque', color: 'chargeTorque', scale: 'torque', unit: 'pu', value: S => S.chargeTorque },
+  ],
+  protections: [
+    { key: 'tripLoad', short: 'annLoad', active: (S, cfg) => S.load > cfg.trip.load,
+      limit: { label: 'load', unit: 't/h', digits: 0, nominal: nominalOf('load'), trip: tripOf('load') } },
+  ],
+  readouts: [
+    { key: 'chargeTorque', order: 8, value: (S, e) => S.chargeTorque / e.cfg.ratio, unit: 'pu', digits: 3 },
+    { key: 'throughput', order: 16, value: S => S.load * Math.abs(S.speed) / NOMINAL_SPEED, unit: 't/h', digits: 0 },
+  ],
+  step: (S, dt) => {
+    S.particleAccumulator += dt;
+    if (S.particleAccumulator + 1e-12 >= PARTICLE_DT) { updateParticles(S, PARTICLE_DT); S.particleAccumulator -= PARTICLE_DT; }
+  },
+});
+
+defineSubsystem({
+  id: 'session',
+  params: [
+    { key: 'animation', default: 1, panel: 'operation', type: 'range', label: 'animation', log: true, min: 0.001, max: 20, number: true,
+      format: v => `×${fmt(v, v < 0.1 ? 3 : 2).replace(/0+$/, '').replace(/[.,]$/, '')}` },
+    { key: 'angleMode', default: 'stationary', panel: null },
+  ],
+});
+
+defineSubsystem({
+  id: 'converter',
+  before: S => ccRecord(S),
+});
+
+/* ======================= catalogues built from the registry ======================= */
+
+const PARAMS = SUBSYSTEMS.flatMap(s => s.params);
+const SETTING_KEYS = PARAMS.map(p => p.key);
+const SIGNALS = SUBSYSTEMS.flatMap(s => s.signals);
+const PROTECTION_ORDER = ['tripLoad', 'tripSpeed', 'tripStator', 'tripStatorVoltage', 'tripRotor', 'tripVoltage', 'tripPower', 'tripFlux'];
+const PROTECTIONS = SUBSYSTEMS.flatMap(s => s.protections)
+  .sort((a, b) => (PROTECTION_ORDER.indexOf(a.key) + 1 || 99) - (PROTECTION_ORDER.indexOf(b.key) + 1 || 99));
+const READOUTS = SUBSYSTEMS.flatMap(s => s.readouts).sort((a, b) => (a.order || 99) - (b.order || 99));
+const PANELS = Object.fromEntries(SUBSYSTEMS.filter(s => s.panel).map(s => [s.panel.id, s.panel]));
+
+function defaultSettings() { const o = {}; for (const p of PARAMS) o[p.key] = p.default; return o; }
+function paramMax(p, S) { return typeof p.max === 'function' ? p.max(S) : p.max; }
+
+/** Every recorded signal plus the electrical snapshot fields used by drawings. */
+function computeSignals(S) {
+  const e = computeElectrical(S), out = Object.assign({}, e);
+  delete out.cfg;
+  for (const d of SIGNALS) out[d.key] = d.value ? d.value(S, e) : e[d.key];
+  return out;
+}
+
+/** Map of protection key → condition currently present. */
+function activeConditions(S) {
+  const e = computeElectrical(S), out = {};
+  for (const p of PROTECTIONS) out[p.key] = p.active(S, e.cfg, e);
+  return out;
+}
+
+/** Calls every subsystem's model hooks for one step. */
+function stepSubsystems(S, dt) {
+  for (const s of SUBSYSTEMS) if (s.before) s.before(S);
+  for (const s of SUBSYSTEMS) if (s.step) s.step(S, dt);
+}
+
+/* ==========================================================================
+ * simulation.js — protections, trend history and the fixed-step loop.
+ * Pure model code: no DOM access.
+ * ========================================================================== */
+
+/* ---------- protections ---------- */
+
+/* activeConditions() lives in registry.js: protections are declared by subsystems. */
+
+/** Latches one trip and records its exact model-time event. */
+function latchTrip(S, reason, startTime) {
+  if (S.tripped) return;
+  S.tripped = true; S.tripReason = reason; S.run = false;
+  S.events.push({ time: S.time, reason, startTime, delay: TRIP_DELAY });
+  S.timers = {};
+}
+
+/** Advances independent continuous-condition timers; cleared conditions reset their timers. */
+function updateProtections(S, dt) {
+  if (!S.run || S.tripped) { S.timers = {}; return; }
+  const active = activeConditions(S);
+  for (const key of Object.keys(active)) {
+    if (!active[key]) { delete S.timers[key]; continue; }
+    if (!S.timers[key]) S.timers[key] = { elapsed: 0, startTime: S.time - dt };
+    S.timers[key].elapsed += dt;
+    if (S.timers[key].elapsed + 1e-10 >= TRIP_DELAY) { latchTrip(S, key, S.timers[key].startTime); return; }
+  }
+}
+
+/** The most advanced pending condition, for display. */
+function pendingTrip(S) {
+  let best = null;
+  for (const key of Object.keys(S.timers)) {
+    const t = S.timers[key];
+    if (!best || t.elapsed > best.elapsed) best = { key, elapsed: t.elapsed };
+  }
+  return best;
+}
+
+/** Whether the drive is at standstill with no excitation and no stator current. */
+function isAtRest(S) {
+  const base = configuration(S.poles).nominal.statorCurrent;
+  return Math.abs(S.speed) < 0.05 && S.ir < 0.05 && Math.hypot(S.id, S.iq) < 0.05 * base;
+}
+
+/**
+ * Trip reset. The trip has already removed all commands, so the latch can be cleared
+ * at any time, even while the mill is still coasting. A condition that is still present
+ * (for example a feed setting above the limit) trips again one second after the next start.
+ * Returns true if a trip was cleared.
+ */
+function resetTrip(S) {
+  if (!S.tripped) return false;
+  S.tripped = false; S.tripReason = null; S.timers = {};
+  return true;
+}
+
+/* ---------- trend history ---------- */
+
+/**
+ * Ring-like trend store. Samples are appended; old samples are skipped via
+ * `start` and compacted occasionally.
+ */
+function createHistory() { return { samples: [], start: 0, nextSample: SAMPLE_DT }; }
+
+function addSample(S, H) {
+  H.samples.push(Object.assign({ time: S.time }, S.signals));
+  const cutoff = S.time - MAX_HISTORY;
+  while (H.start + 1 < H.samples.length && H.samples[H.start + 1].time < cutoff) H.start++;
+  if (H.start > 5000) { H.samples = H.samples.slice(H.start); H.start = 0; }
+  S.events = S.events.filter(e => e.time >= cutoff);
+}
+
+function clearHistory(S, H) {
+  H.samples = []; H.start = 0; S.events = [];
+  H.nextSample = S.time + SAMPLE_DT;
+  S.signals = computeSignals(S);
+  addSample(S, H);
+}
+
+/** First sample index at or after a time (binary search). */
+function findHistoryIndex(H, time) {
+  let low = H.start, high = H.samples.length;
+  while (low < high) { const mid = (low + high) >> 1; if (H.samples[mid].time < time) low = mid + 1; else high = mid; }
+  return low;
+}
+
+/** Recorded sample closest to a time, or null. */
+function nearestSample(H, time) {
+  if (H.samples.length <= H.start) return null;
+  const i = findHistoryIndex(H, time);
+  if (i <= H.start) return H.samples[H.start];
+  if (i >= H.samples.length) return H.samples[H.samples.length - 1];
+  const a = H.samples[i - 1], b = H.samples[i];
+  return Math.abs(a.time - time) <= Math.abs(b.time - time) ? a : b;
+}
+
+/* ---------- fixed-step loop ---------- */
+
+/** Advances the model by DT: subsystem hooks in registration order, then protections and recording. */
+function advance(S, H) {
+  stepSubsystems(S, DT);
+  S.time += DT;
+  updateProtections(S, DT);
+  S.signals = computeSignals(S);
+  if (S.time + 1e-9 >= H.nextSample) { addSample(S, H); H.nextSample += SAMPLE_DT; }
+}
+
+/** Artificially changes rotor angle while paused, preserving either α/β or d/q currents. */
+function setRotorAngle(S, H, degrees) {
+  if (!S.paused || !Number.isFinite(degrees)) return;
+  const fixed = inversePark(S.id, S.iq, S.poles * S.angle);
+  S.angle = wrap(clamp(degrees, 0, 360) * Math.PI / 180, TWO_PI);
+  if (S.angleMode === 'stationary') { const t = park(fixed.alpha, fixed.beta, S.poles * S.angle); S.id = t.d; S.iq = t.q; }
+  S.torque = S.flux * S.iq;
+  S.power = REF_POWER * S.torque * S.speed / NOMINAL_SPEED;
+  S.returnPower = S.power < 0 ? -S.power * RETURN_EFFICIENCY : 0;
+  S.timers = {};
+  clearHistory(S, H);
+}
+
+/* ==========================================================================
+ * i18n.js — every interface string in one dictionary per language.
+ * Add a language by adding one object with the same keys.
+ * ========================================================================== */
+
+const I18N = {
+  en: {
+    help: 'Instructions', yAuto: 'Auto Y scale',
+    welcomeLead: 'A teaching model of a gearless mill drive: ring motor, excitation, speed and cos φ control, protections and a simplified thyristor converter.',
+    welcomeStep1: 'Press Start. Excitation builds up first, then the mill accelerates along the speed ramp.',
+    welcomeStep2: 'Set speed and feed under Operation. Controller settings are in the Stator and Rotor panels below the trends.',
+    welcomeStep3: 'Watch the protection strip at the top: amber counts down to a trip, red means tripped. Press Reset trip, then Start again.',
+    welcomeStep4: 'Read the trends: choose signals, hover for values, export CSV or an image.',
+    welcomeStep5: 'Thyristors control shows which converter valves conduct. Opening it slows the simulation to ×0.01 so the switching can be followed; closing it restores the previous speed.',
+    welcomeNote: 'Educational model with invented values. Not for operating or protecting real equipment.',
+    welcomeStart: 'Start',
+    ccTimingHint: 'One lane per output phase and bridge group. Upper bar: P bridge (positive current), lower bar: N bridge. Colour marks the supply pair, the label names the two conducting thyristors. Hover for details.',
+    title: 'GMD mill learning simulator',
+    subtitle: 'Gearless mill drive: invented configurations, controls and educational trips',
+    language: 'Language',
+    simulation: 'Simulation', start: 'Start', stop: 'Stop', tripReset: 'Reset trip', pause: 'Pause', resume: 'Resume',
+    step: 'Step +1 ms', reset: 'Reset model',
+    tripHint: 'Each condition trips after one continuous second of model time. Reset clears the trip at once, even while the mill is coasting. If the cause is still present, the drive trips again after the next start.',
+    hotkeys: 'Keys: Space — pause, → — step, S — start, X — stop, R — reset trip',
+    settings: 'Operation', speedTarget: 'Speed setpoint', ramp: 'Speed ramp', load: 'Feed (load)', animation: 'Animation speed',
+    configuration: 'Machine configuration', polePairs: 'Pole pairs', inertia: 'Inertia',
+    poleHint: 'Available at standstill without excitation. Changing the configuration resets the model.',
+    chargeCoupling: 'Load torque from the charge model',
+    chargeHint: 'On: the load torque comes from where the material sits in the drum, so lifting, cascading and rollback act on the drive. Off: a smooth load formula.',
+    limits: 'Configuration limits', parameter: 'Parameter', nominal: 'Nominal', tripThreshold: 'Trip',
+    limitsHint: 'Invented scaling: power, load and stator current are proportional to the pole-pair count. These are not equipment settings.',
+    position: 'Rotor position while paused', mechanicalAngle: 'Mechanical angle', electricalAngle: 'Electrical angle',
+    holdStationary: 'Hold stator α/β currents', holdDq: 'Hold rotor-frame Id/Iq',
+    angleHint: 'Repositioning clears trends and event history; it does not simulate acceleration.',
+    machine: 'Mill and motor', vectors: 'Current vector diagram',
+    machineHelp: 'Outer ring: stator with 60° phase belts, red for current toward you, blue for current away; the belt outline shows its phase. Shell: rotor poles N/S on the mill, brightness follows excitation. Yellow arrow: rotor field axis. Blue arrow: stator current-field axis. Inside: the grinding charge and shell lifters.',
+    vectorHelp: 'θe is the rotor electrical angle from α to d. δ is the signed angle from d to the resultant current. Both are electrical angles. The 1.0 IN circle is nominal current, the outer circle 1.5 IN. The cos φ gauge pointer has unit length; its horizontal projection is cos φ. Model: Ud = 0.08·Id/IN − 0.35·ω·Iq/IN; Uq = 0.08·Iq/IN + ω·(Φ + 0.35·Id/IN), ω = n / 12 rpm. Air-gap flux Ψδ = (Φ + 0.35·Id/IN, 0.35·Iq/IN). A simplified model, not a validated machine model.',
+    graph: 'Trends', window: 'Time window', signals: 'Signals',
+    graphHint: 'Each trace is shown in % of its own nominal; with auto scale the Y axis follows the visible traces. Hover near a trace for its description, or over a red line for trip details. Samples are 20 ms apart.',
+    exportCsv: 'Export CSV', exportPng: 'Save image',
+    statorControl: 'Stator current control', statorAuto: 'Automatic: speed and cos φ', statorManual: 'Manual Id / Iq',
+    cosPhiTarget: 'cos φ setpoint', sense: 'Current',
+    statorHint: 'Automatic: ramped speed PI sets Iq*, a cos φ regulator sets Id*, and the vector current is limited to 1.0 IN, below the trip level. Manual values are in multiples of IN.',
+    rotorControl: 'Rotor excitation control', rotorAuto: 'Automatic: nominal flux, field weakening', rotorManual: 'Manual current setpoint',
+    resistance: 'Equivalent resistance',
+    rotorHint: 'The rotor PI sets the excitation voltage. Above nominal speed the automatic setpoint reduces flux so the stator voltage stays near 1 pu.',
+    warning: 'Educational model only. Configuration scaling, thresholds, trip delay, load, currents and regeneration are invented approximations. Trip removes commands; speed and currents decay dynamically. The return-power estimate does not establish real converter capability. Do not use this software to operate or protect equipment.',
+    values: 'Machine values', layers: 'Display layers',
+    material: 'Material', currents: 'Winding currents', fields: 'Field axes', phaseVectors: 'Phase vectors', resultant: 'Resultant current',
+    showPowerFactor: 'cos φ gauge', clarkeLayer: 'Clarke α/β', parkLayer: 'Park d/q', angles: 'Angle markers',
+    status: 'Status', time: 'Model time', speed: 'Speed', speedRef: 'Ramped setpoint', frequency: 'Electrical frequency',
+    power: 'Shaft power', returnPower: 'Possible return', flux: 'Rotor flux Φ', psi: 'Air-gap flux |Ψδ|',
+    statorVoltage: 'Stator voltage |U|', torque: 'Torque', chargeTorque: 'Load torque',
+    rotorCurrent: 'Rotor current', rotorVoltageName: 'Rotor voltage', statorCurrent: 'Stator current |I|', throughput: 'Throughput',
+    powerFactor: 'cos φ',
+    paused: 'Paused', running: 'Running', stopping: 'Stopping', stopped: 'Stopped', tripped: 'Tripped',
+    healthy: 'No trip', pending: 'Trip pending',
+    tripLoad: 'Feed above machine limit', tripSpeed: 'Overspeed', tripStator: 'Stator overcurrent',
+    tripStatorVoltage: 'Stator overvoltage', tripRotor: 'Rotor overcurrent', tripVoltage: 'Rotor overvoltage',
+    tripPower: 'Shaft overpower', tripFlux: 'Air-gap flux above limit',
+    annLoad: 'Feed', annSpeed: 'Speed', annStator: 'Stator I', annStatorVoltage: 'Stator U', annRotor: 'Rotor I',
+    annVoltage: 'Rotor U', annPower: 'Power', annFlux: 'Flux',
+    protection: 'Protection',
+    cursorPrompt: 'Move the pointer over the graph to read values.', recordedTime: 'Recorded time', noSignals: 'No signals selected',
+    eventTime: 'Trip time', conditionStart: 'Condition began', delay: 'Delay',
+    groupStator: 'Stator', groupTransforms: 'Clarke / Park', groupRotor: 'Rotor excitation', groupMachine: 'Machine and energy',
+    descIa: 'Instantaneous phase A current.', descIb: 'Instantaneous phase B current.', descIc: 'Instantaneous phase C current.',
+    descUa: 'Simplified phase A voltage.', descUb: 'Simplified phase B voltage.', descUc: 'Simplified phase C voltage.',
+    descUmag: 'Stator voltage space-vector magnitude.',
+    descAlpha: 'Stationary Clarke α component.', descBeta: 'Stationary Clarke β component.',
+    descId: 'Rotor-frame d-axis current.', descIq: 'Rotor-frame q-axis current.',
+    descIr: 'Rotor excitation current.', descUr: 'Rotor excitation voltage.', descFlux: 'Saturated rotor flux.',
+    descPsi: 'Air-gap flux including armature reaction.',
+    descCosPhi: 'Displacement power factor of the simplified stator voltage and current vectors. Undefined at negligible voltage or current.',
+    descPower: 'Signed shaft power.', descReturn: 'Estimated possible return during braking.', descThroughput: 'Simplified throughput.',
+    descSpeed: 'Signed mechanical speed.', descSpeedRef: 'Ramped speed setpoint used by the speed controller.',
+    descTorque: 'Signed electromagnetic torque.', descChargeTorque: 'Signed load torque of the charge.',
+    rotorAxis: 'Rotor field axis: main excitation field attached to the rotor.',
+    statorAxis: 'Stator current-field axis: spatial axis of the resultant stator current.',
+    resultAxis: 'Resultant current: sum of balanced phase-current contributions.',
+    clarkeAxis: 'Clarke: stationary α/β current components.', parkAxis: 'Park: d/q current components in the rotor frame.',
+    pfUndefined: 'undefined', pfLag: 'lagging', pfLead: 'leading', pfUnity: 'in phase',
+    slowFrame: 'The browser cannot keep up with this animation speed; the model runs slower than requested.',
+    ccTitle: 'Thyristors control',
+    ccWarning: 'Idealized educational model: not a manufacturer schematic and not for equipment settings. The output frequency equals the machine electrical frequency. One-way coupling, fixed firing angle, no real voltage modulation or commutation overlap.', ccClear: 'Clear history',
+    ccPulse: '-pulse', ccInput: 'input', ccOutput: 'output', ccSigned: 'signed',
+    ccOpens: 'While the module is open the simulation runs at ×0.01; closing it restores the previous speed.',
+    toastSlow: 'Simulation speed reduced to ×0.01',
+    ccLegend: 'Schematic: phase colour marks conducting thyristors, “gate” is a brief firing pulse. Cabinet: white valves conduct. The P bridge carries positive current, the N bridge negative.',
+    ccSchematic: 'Electrical schematic', ccCabinet: 'Illustrative cabinet valve layout', ccTiming: 'Conduction timing',
+    ccChart: 'Output current setpoints and converter input currents',
+    ccNoHistory: 'History appears after resuming the simulation.', ccNoPair: 'No conducting pair',
+    ccConducting: 'conducting', ccOff: 'off', ccPhaseWord: 'Phase', ccGroup: 'group',
+    ccSetpoint: 'Output current setpoint', ccInputCurrent: 'Input current',
+    ccIllustrative: 'Illustrative circuit; highlight means conduction',
+    u_rpm: 'rpm', u_Hz: 'Hz', u_MW: 'MW', 'u_t/h': 't/h', u_s: 's', u_ms: 'ms', u_min: 'min', u_pu: 'pu', 'u_rpm/s': 'rpm/s',
+  },
+  ru: {
+    help: 'Инструкция', yAuto: 'Автомасштаб Y',
+    welcomeLead: 'Учебная модель безредукторного привода мельницы: кольцевой двигатель, возбуждение, регулирование скорости и cos φ, защиты и упрощённый тиристорный преобразователь.',
+    welcomeStep1: 'Нажмите «Пуск». Сначала нарастает возбуждение, затем мельница разгоняется по рампе.',
+    welcomeStep2: 'Задайте скорость и питание в блоке «Работа». Настройки регуляторов — в панелях статора и ротора под трендами.',
+    welcomeStep3: 'Следите за табло защит вверху: жёлтый — идёт отсчёт до аварии, красный — авария. Нажмите «Сброс аварии», затем снова «Пуск».',
+    welcomeStep4: 'Читайте тренды: выбирайте сигналы, наводите курсор для значений, выгружайте CSV или картинку.',
+    welcomeStep5: '«Управление тиристорами» показывает, какие вентили преобразователя проводят. При открытии скорость симуляции снижается до ×0,01, чтобы было видно переключения; при закрытии прежняя скорость возвращается.',
+    welcomeNote: 'Учебная модель с вымышленными значениями. Не для управления и защиты реального оборудования.',
+    welcomeStart: 'Начать',
+    ccTimingHint: 'Одна дорожка — одна выходная фаза и группа мостов. Верхняя полоса — мост P (положительный ток), нижняя — мост N. Цвет — питающая пара, подпись — два проводящих тиристора. Наведите курсор для подробностей.',
+    title: 'Учебная модель мельницы с GMD',
+    subtitle: 'Безредукторный привод мельницы: вымышленные конфигурации, управление и учебные отключения',
+    language: 'Язык',
+    simulation: 'Симуляция', start: 'Пуск', stop: 'Стоп', tripReset: 'Сброс аварии', pause: 'Пауза', resume: 'Продолжить',
+    step: 'Шаг +1 мс', reset: 'Сброс модели',
+    tripHint: 'Каждое условие вызывает аварию после одной непрерывной секунды модельного времени. Сброс снимает аварию сразу, даже пока мельница вращается по инерции. Если причина не устранена, после следующего пуска авария повторится.',
+    hotkeys: 'Клавиши: пробел — пауза, → — шаг, S — пуск, X — стоп, R — сброс аварии',
+    settings: 'Работа', speedTarget: 'Задание скорости', ramp: 'Темп разгона', load: 'Питание (нагрузка)', animation: 'Скорость анимации',
+    configuration: 'Конфигурация машины', polePairs: 'Пар полюсов', inertia: 'Инерция',
+    poleHint: 'Доступно на остановленной машине без возбуждения. Смена конфигурации сбрасывает модель.',
+    chargeCoupling: 'Момент нагрузки от модели загрузки',
+    chargeHint: 'Вкл.: момент нагрузки определяется положением материала в барабане — подъём, каскад и откат действуют на привод. Выкл.: гладкая формула нагрузки.',
+    limits: 'Пределы конфигурации', parameter: 'Параметр', nominal: 'Номинал', tripThreshold: 'Авария',
+    limitsHint: 'Вымышленное масштабирование: мощность, нагрузка и ток статора пропорциональны числу пар полюсов. Это не уставки оборудования.',
+    position: 'Положение ротора на паузе', mechanicalAngle: 'Механический угол', electricalAngle: 'Электрический угол',
+    holdStationary: 'Фиксировать токи статора α/β', holdDq: 'Фиксировать Id/Iq относительно ротора',
+    angleHint: 'Поворот очищает тренды и историю событий; движение с ускорением не моделируется.',
+    machine: 'Мельница и двигатель', vectors: 'Векторная диаграмма токов',
+    machineHelp: 'Внешнее кольцо — статор с фазными зонами по 60°: красный — ток к наблюдателю, синий — от него; обводка показывает фазу. Корпус — полюса ротора N/S на мельнице, яркость следует за возбуждением. Жёлтая стрелка — ось поля ротора, голубая — ось поля от тока статора. Внутри — загрузка и футеровка с лифтерами.',
+    vectorHelp: 'θe — электрический угол ротора от оси α до d. δ — знаковый угол от d до результирующего тока. Оба угла электрические. Окружность 1,0 IN — номинальный ток, внешняя — 1,5 IN. Стрелка индикатора cos φ единичной длины, её горизонтальная проекция равна cos φ. Модель: Ud = 0,08·Id/IN − 0,35·ω·Iq/IN; Uq = 0,08·Iq/IN + ω·(Φ + 0,35·Id/IN), ω = n / 12 об/мин. Поток в зазоре Ψδ = (Φ + 0,35·Id/IN, 0,35·Iq/IN). Упрощённая модель, а не валидированная модель машины.',
+    graph: 'Тренды', window: 'Окно времени', signals: 'Сигналы',
+    graphHint: 'Каждый тренд показан в % своего номинала; при автомасштабе ось Y подстраивается под видимые тренды. Наведите курсор рядом с трендом для описания или на красную линию для сведений об аварии. Шаг записи — 20 мс.',
+    exportCsv: 'Экспорт CSV', exportPng: 'Сохранить изображение',
+    statorControl: 'Управление током статора', statorAuto: 'Автомат: скорость и cos φ', statorManual: 'Ручные Id / Iq',
+    cosPhiTarget: 'Задание cos φ', sense: 'Ток',
+    statorHint: 'Автомат: PI скорости с рампой задаёт Iq*, регулятор cos φ задаёт Id*, векторный ток ограничен 1,0 IN — ниже порога аварии. Ручные значения — в долях IN.',
+    rotorControl: 'Управление возбуждением ротора', rotorAuto: 'Автомат: номинальный поток, ослабление поля', rotorManual: 'Ручное задание тока',
+    resistance: 'Эквивалентное сопротивление',
+    rotorHint: 'PI ротора задаёт напряжение возбуждения. Выше номинальной скорости автоматическое задание снижает поток, чтобы напряжение статора оставалось около 1 о.е.',
+    warning: 'Только учебная модель. Масштабирование конфигураций, пороги, задержка, нагрузка, токи и рекуперация — вымышленные приближения. При аварии команды снимаются; скорость и токи спадают динамически. Оценка возврата энергии не подтверждает возможности реального преобразователя. Программу нельзя использовать для управления или защиты оборудования.',
+    values: 'Значения машины', layers: 'Слои отображения',
+    material: 'Материал', currents: 'Токи обмоток', fields: 'Оси полей', phaseVectors: 'Векторы фаз', resultant: 'Результирующий ток',
+    showPowerFactor: 'Индикатор cos φ', clarkeLayer: 'Кларк α/β', parkLayer: 'Парк d/q', angles: 'Обозначения углов',
+    status: 'Состояние', time: 'Модельное время', speed: 'Скорость', speedRef: 'Задание после рампы', frequency: 'Электрическая частота',
+    power: 'Мощность на валу', returnPower: 'Возможный возврат', flux: 'Поток ротора Φ', psi: 'Поток в зазоре |Ψδ|',
+    statorVoltage: 'Напряжение статора |U|', torque: 'Момент', chargeTorque: 'Момент нагрузки',
+    rotorCurrent: 'Ток ротора', rotorVoltageName: 'Напряжение ротора', statorCurrent: 'Ток статора |I|', throughput: 'Производительность',
+    powerFactor: 'cos φ',
+    paused: 'Пауза', running: 'Работа', stopping: 'Останов', stopped: 'Остановлена', tripped: 'Авария',
+    healthy: 'Аварии нет', pending: 'Отсчёт до аварии',
+    tripLoad: 'Питание выше предела машины', tripSpeed: 'Превышение скорости', tripStator: 'Превышение тока статора',
+    tripStatorVoltage: 'Превышение напряжения статора', tripRotor: 'Превышение тока ротора', tripVoltage: 'Превышение напряжения ротора',
+    tripPower: 'Превышение мощности на валу', tripFlux: 'Превышение потока в зазоре',
+    annLoad: 'Питание', annSpeed: 'Скорость', annStator: 'I статора', annStatorVoltage: 'U статора', annRotor: 'I ротора',
+    annVoltage: 'U ротора', annPower: 'Мощность', annFlux: 'Поток',
+    protection: 'Защиты',
+    cursorPrompt: 'Наведите курсор на график, чтобы прочитать значения.', recordedTime: 'Время записи', noSignals: 'Сигналы не выбраны',
+    eventTime: 'Время аварии', conditionStart: 'Условие появилось', delay: 'Задержка',
+    groupStator: 'Статор', groupTransforms: 'Кларк / Парк', groupRotor: 'Возбуждение ротора', groupMachine: 'Машина и энергия',
+    descIa: 'Мгновенный ток фазы A.', descIb: 'Мгновенный ток фазы B.', descIc: 'Мгновенный ток фазы C.',
+    descUa: 'Упрощённое напряжение фазы A.', descUb: 'Упрощённое напряжение фазы B.', descUc: 'Упрощённое напряжение фазы C.',
+    descUmag: 'Модуль пространственного вектора напряжения статора.',
+    descAlpha: 'Неподвижная составляющая α (Кларк).', descBeta: 'Неподвижная составляющая β (Кларк).',
+    descId: 'Составляющая тока по оси d ротора.', descIq: 'Составляющая тока по оси q ротора.',
+    descIr: 'Ток возбуждения ротора.', descUr: 'Напряжение возбуждения ротора.', descFlux: 'Поток ротора с насыщением.',
+    descPsi: 'Поток в зазоре с учётом реакции якоря.',
+    descCosPhi: 'Коэффициент сдвига фаз упрощённых векторов напряжения и тока статора. При малом напряжении или токе не определён.',
+    descPower: 'Знаковая мощность на валу.', descReturn: 'Оценка возможного возврата при торможении.', descThroughput: 'Упрощённая производительность.',
+    descSpeed: 'Знаковая механическая скорость.', descSpeedRef: 'Задание скорости после рампы, используемое регулятором.',
+    descTorque: 'Знаковый электромагнитный момент.', descChargeTorque: 'Знаковый момент нагрузки от загрузки.',
+    rotorAxis: 'Ось поля ротора: основное поле возбуждения, связанное с ротором.',
+    statorAxis: 'Ось поля от тока статора: пространственная ось результирующего тока.',
+    resultAxis: 'Результирующий ток: сумма вкладов симметричных фазных токов.',
+    clarkeAxis: 'Кларк: неподвижные компоненты тока α/β.', parkAxis: 'Парк: компоненты тока d/q в системе ротора.',
+    pfUndefined: 'не определён', pfLag: 'отстаёт', pfLead: 'опережает', pfUnity: 'в фазе',
+    slowFrame: 'Браузер не успевает за выбранной скоростью анимации; модель идёт медленнее заданного.',
+    ccTitle: 'Управление тиристорами',
+    ccWarning: 'Идеализированная учебная модель: не схема производителя и не для настройки оборудования. Выходная частота равна электрической частоте машины. Связь односторонняя, угол управления фиксирован, реальная модуляция напряжения и перекрытие коммутации не моделируются.', ccClear: 'Очистить историю',
+    ccPulse: '-пульсный', ccInput: 'вход', ccOutput: 'выход', ccSigned: 'знаковая',
+    ccOpens: 'Пока модуль открыт, симуляция идёт со скоростью ×0,01; при закрытии прежняя скорость возвращается.',
+    toastSlow: 'Скорость симуляции снижена до ×0,01',
+    ccLegend: 'Схема: цвет фазы — проводящие тиристоры, «gate» — короткий управляющий импульс. Шкаф: белые вентили проводят. Мост P ведёт положительный ток, мост N — отрицательный.',
+    ccSchematic: 'Электрическая схема', ccCabinet: 'Условное расположение вентилей в шкафу', ccTiming: 'Диаграмма проводимости',
+    ccChart: 'Задания выходного тока и входные токи преобразователя',
+    ccNoHistory: 'История появится после продолжения симуляции.', ccNoPair: 'Нет проводящей пары',
+    ccConducting: 'проводит', ccOff: 'закрыт', ccPhaseWord: 'Фаза', ccGroup: 'группа',
+    ccSetpoint: 'Задание выходного тока', ccInputCurrent: 'Входной ток',
+    ccIllustrative: 'Условная схема; подсветка — проводимость',
+    u_rpm: 'об/мин', u_Hz: 'Гц', u_MW: 'МВт', 'u_t/h': 'т/ч', u_s: 'с', u_ms: 'мс', u_min: 'мин', u_pu: 'о.е.', 'u_rpm/s': 'об/мин/с',
+  },
+};
+
+let LANG = 'en';
+/** Localised unit symbol (unknown units are returned unchanged). */
+function unit(u) { return u ? tr('u_' + u) === 'u_' + u ? u : tr('u_' + u) : ''; }
+/** Translated string for a key (falls back to the key). */
+function tr(key) { return (I18N[LANG] && I18N[LANG][key]) || I18N.en[key] || key; }
+/** Number formatting with the language's decimal separator. */
+function fmt(v, d = 2) {
+  if (v === null || v === undefined || !Number.isFinite(v)) return '—';
+  if (Math.abs(v) < 0.5 * Math.pow(10, -d)) v = 0;
+  const text = v.toFixed(d);
+  return LANG === 'ru' ? text.replace('.', ',') : text;
+}
+
+/* ==========================================================================
+ * common.js — palette (read from the CSS tokens), canvas helpers, tooltips.
+ * ========================================================================== */
+
+const PALETTE = { sig: {} };
+const PALETTE_TOKENS = ['bg', 'red', 'surface', 'surface-2', 'inset', 'line', 'line-strong', 'text', 'muted', 'dim', 'control', 'control-strong',
+  'run', 'pending', 'trip', 'steel-1', 'steel-2', 'steel-3', 'copper', 'pole-n', 'pole-s', 'ore-1', 'ore-2', 'ore-3'];
+const SIGNAL_TOKENS = ['phaseA', 'phaseB', 'phaseC', 'phaseAlight', 'phaseBlight', 'phaseClight', 'voltage', 'alpha', 'beta', 'd', 'q',
+  'rotor', 'stator', 'rotorVoltage', 'flux', 'psi', 'cosPhi', 'power', 'returnPower', 'throughput', 'speed', 'speedRef', 'torque', 'chargeTorque'];
+
+/** Reads every colour token from CSS so canvases and HTML share one palette. */
+function loadPalette() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const t of PALETTE_TOKENS) PALETTE[t.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = cs.getPropertyValue('--' + t).trim();
+  for (const t of SIGNAL_TOKENS) PALETTE.sig[t] = cs.getPropertyValue('--sig-' + t).trim();
+}
+const FONT = '"ABBvoice", "Segoe UI", "Helvetica Neue", Arial, sans-serif';
+function font(size, weight) { return `${weight || 400} ${size}px ${FONT}`; }
+
+/** Sizes a canvas for its CSS box and device pixel ratio. Returns {width, height}. */
+function resizeCanvas(canvas) {
+  const r = canvas.getBoundingClientRect(), ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(r.width * ratio));
+  canvas.height = Math.max(1, Math.round(r.height * ratio));
+  canvas.getContext('2d').setTransform(ratio, 0, 0, ratio, 0, 0);
+  canvas._w = r.width; canvas._h = r.height;
+}
+
+function circle(ctx, x, y, r, stroke, width, fill) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TWO_PI);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = width; ctx.stroke(); }
+}
+
+function arrow(ctx, x1, y1, x2, y2, color, width = 2.5) {
+  const angle = Math.atan2(y2 - y1, x2 - x1), head = 5 + width * 2;
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1);
+  ctx.lineTo(x2 - Math.cos(angle) * head * 0.6, y2 - Math.sin(angle) * head * 0.6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * Math.cos(angle - Math.PI / 7), y2 - head * Math.sin(angle - Math.PI / 7));
+  ctx.lineTo(x2 - head * Math.cos(angle + Math.PI / 7), y2 - head * Math.sin(angle + Math.PI / 7));
+  ctx.closePath(); ctx.fill();
+}
+
+/** Ring sector between radii for a screen-angle interval (a1 > a2, drawn clockwise in math sense). */
+function ringSector(ctx, cx, cy, r1, r2, a1, a2) {
+  ctx.beginPath(); ctx.arc(cx, cy, r2, a1, a2, true); ctx.arc(cx, cy, r1, a2, a1, false); ctx.closePath();
+}
+
+/** Mixes two hex colours. */
+function mix(hexA, hexB, t) {
+  const a = parseInt(hexA.slice(1), 16), b = parseInt(hexB.slice(1), 16);
+  const ch = (x, s) => (x >> s) & 255;
+  const m = s => Math.round(ch(a, s) + (ch(b, s) - ch(a, s)) * t);
+  return `rgb(${m(16)},${m(8)},${m(0)})`;
+}
+
+/** Red (toward viewer) or blue (away) by sign; intensity by magnitude relative to base. */
+function currentColor(current, base) {
+  const m = clamp(Math.abs(current) / Math.max(base, 1e-3), 0, 1);
+  return mix('#2a2a2a', current >= 0 ? '#ff4b45' : '#3d8bff', m);
+}
+
+/** Dot (toward viewer) or cross (away) current symbol. */
+function currentSymbol(ctx, x, y, r, current, outline, base) {
+  circle(ctx, x, y, r, outline, 0.9, '#0a0a0a');
+  if (Math.abs(current) < 0.01 * base) return;
+  const color = currentColor(current, base);
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = Math.max(1.4, r * 0.28);
+  if (current > 0) circle(ctx, x, y, r * 0.42, null, 0, color);
+  else { const o = r * 0.42; ctx.beginPath(); ctx.moveTo(x - o, y - o); ctx.lineTo(x + o, y + o); ctx.moveTo(x + o, y - o); ctx.lineTo(x - o, y + o); ctx.stroke(); }
+}
+
+/* ---------- hit areas & tooltip ---------- */
+
+function addHit(list, x1, y1, x2, y2, key) { list.push({ x1, y1, x2, y2, key }); }
+
+function distanceToSegment(x, y, l) {
+  const dx = l.x2 - l.x1, dy = l.y2 - l.y1, len = dx * dx + dy * dy;
+  if (len < 1e-8) return Math.hypot(x - l.x1, y - l.y1);
+  const f = clamp(((x - l.x1) * dx + (y - l.y1) * dy) / len, 0, 1);
+  return Math.hypot(x - l.x1 - f * dx, y - l.y1 - f * dy);
+}
+
+let tooltipEl = null;
+function showTooltip(text, x, y, kind) {
+  tooltipEl.textContent = text; tooltipEl.className = 'tooltip' + (kind ? ' ' + kind : '');
+  tooltipEl.style.display = 'block';
+  tooltipEl.style.left = `${clamp(x + 14, 5, window.innerWidth - tooltipEl.offsetWidth - 5)}px`;
+  tooltipEl.style.top = `${clamp(y + 14, 5, window.innerHeight - tooltipEl.offsetHeight - 5)}px`;
+}
+function hideTooltip() { if (tooltipEl) tooltipEl.style.display = 'none'; }
+
+/** Shows the explanation of the nearest registered segment under the pointer. */
+function segmentTooltip(event, canvas, list) {
+  const r = canvas.getBoundingClientRect(), x = event.clientX - r.left, y = event.clientY - r.top;
+  let closest = null, distance = event.pointerType === 'touch' ? 18 : 10;
+  for (const line of list) { const d = distanceToSegment(x, y, line); if (d < distance) { distance = d; closest = line; } }
+  if (closest) showTooltip(tr(closest.key), event.clientX, event.clientY); else hideTooltip();
+}
+
+/* ==========================================================================
+ * machine.js — the ring motor and mill drawn to scale with the pole count.
+ * Mechanical angle θ maps to the screen angle −θ − π/2: 0° at the top,
+ * positive rotation counter-clockwise on screen.
+ * ========================================================================== */
+
+const machineHits = [];
+/* Belt order around one electrical revolution, centres at 30°, 90°, … 330°: [phase, sign]. */
+const BELTS = [[1, -1], [0, 1], [2, -1], [1, 1], [0, -1], [2, 1]];
+const LIFTERS = 24;
+
+function screenAngle(mech) { return -mech - Math.PI / 2; }
+function polar(cx, cy, radius, mech) { const a = screenAngle(mech); return [cx + Math.cos(a) * radius, cy + Math.sin(a) * radius]; }
+
+function drawMachine(canvas, S, layers) {
+  const ctx = canvas.getContext('2d'), W = canvas._w, H = canvas._h;
+  if (!W || !H) return;
+  machineHits.length = 0;
+  const sig = S.signals, cfg = configuration(S.poles), base = cfg.nominal.statorCurrent, p = S.poles;
+  const cx = W / 2, cy = H / 2, r = Math.min(W, H) * 0.47;
+
+  // background
+  const bg = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r * 1.25);
+  bg.addColorStop(0, '#161616'); bg.addColorStop(1, PALETTE.inset);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // ---- stator frame ----
+  const frame = ctx.createRadialGradient(cx, cy, r * 0.9, cx, cy, r);
+  frame.addColorStop(0, PALETTE.steel3); frame.addColorStop(0.5, PALETTE.steel1); frame.addColorStop(1, PALETTE.steel3);
+  ctx.fillStyle = frame; ringSector(ctx, cx, cy, r * 0.945, r, 0, -TWO_PI + 1e-6); ctx.fill('evenodd');
+  circle(ctx, cx, cy, r, PALETTE.lineStrong, 1, null);
+
+  // ---- stator winding belts ----
+  const belt1 = r * 0.885, belt2 = r * 0.94;
+  const phaseCurrents = [sig.ia, sig.ib, sig.ic], phaseColors = [PALETTE.sig.phaseA, PALETTE.sig.phaseB, PALETTE.sig.phaseC];
+  const beltArc = (TWO_PI / (6 * p)) * (belt1 + belt2) / 2;
+  for (let k = 0; k < p; k++) {
+    for (let j = 0; j < 6; j++) {
+      const [phase, sign] = BELTS[j], current = sign * phaseCurrents[phase];
+      const e0 = (j * 60) * Math.PI / 180 + TWO_PI * k, m0 = e0 / p, m1 = (e0 + Math.PI / 3) / p;
+      ringSector(ctx, cx, cy, belt1, belt2, screenAngle(m0), screenAngle(m1));
+      ctx.fillStyle = layers.currents ? currentColor(current, base) : '#5a4231';
+      ctx.fill();
+      ctx.strokeStyle = layers.currents ? phaseColors[phase] : PALETTE.steel3; ctx.lineWidth = 0.8; ctx.stroke();
+      if (layers.currents && beltArc > 13) {
+        const [x, y] = polar(cx, cy, (belt1 + belt2) / 2, (m0 + m1) / 2);
+        currentSymbol(ctx, x, y, Math.min(beltArc * 0.28, (belt2 - belt1) * 0.36), current, phaseColors[phase], base);
+      }
+    }
+  }
+  // stationary 0° reference
+  ctx.fillStyle = PALETTE.muted;
+  ctx.beginPath(); ctx.moveTo(cx - 5, cy - r - 1); ctx.lineTo(cx + 5, cy - r - 1); ctx.lineTo(cx, cy - r + 7); ctx.closePath(); ctx.fill();
+
+  // ---- air gap ----
+  circle(ctx, cx, cy, r * 0.877, '#050505', r * 0.012, null);
+
+  // ---- rotor: shell and poles ----
+  const shell1 = r * 0.71, shell2 = r * 0.795;
+  const shellGrad = ctx.createRadialGradient(cx, cy, shell1, cx, cy, shell2);
+  shellGrad.addColorStop(0, PALETTE.steel2); shellGrad.addColorStop(0.6, PALETTE.steel1); shellGrad.addColorStop(1, PALETTE.steel2);
+  ctx.fillStyle = shellGrad; ringSector(ctx, cx, cy, shell1, shell2, 0, -TWO_PI + 1e-6); ctx.fill('evenodd');
+
+  const count = 2 * p, pitch = TWO_PI / count, pole1 = r * 0.8, pole2 = r * 0.868;
+  const poleArc = pitch * (pole1 + pole2) / 2;
+  const excitation = clamp(S.flux, 0, 1.1) / 1.1;
+  const nColor = mix('#303030', PALETTE.poleN, 0.25 + 0.75 * excitation), sColor = mix('#303030', PALETTE.poleS, 0.25 + 0.75 * excitation);
+  for (let i = 0; i < count; i++) {
+    const centre = S.angle + i * pitch, half = pitch * 0.36, north = i % 2 === 0;
+    ringSector(ctx, cx, cy, pole1, pole2, screenAngle(centre - half), screenAngle(centre + half));
+    ctx.fillStyle = north ? nColor : sColor; ctx.fill();
+    ctx.strokeStyle = '#0a0a0a'; ctx.lineWidth = 0.8; ctx.stroke();
+    if (poleArc > 15) {
+      const [x, y] = polar(cx, cy, (pole1 + pole2) / 2, centre);
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = font(Math.min(11, poleArc * 0.42), 600);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(north ? 'N' : 'S', x, y);
+    }
+    if (layers.currents && poleArc > 22) {
+      // field-coil sides: current out of the page on the +90° electrical side of a north pole
+      for (const side of [-1, 1]) {
+        const [x, y] = polar(cx, cy, r * 0.775, centre + side * pitch * 0.45);
+        currentSymbol(ctx, x, y, Math.min(5, poleArc * 0.14), (north ? 1 : -1) * side * S.ir, PALETTE.sig.rotor, 1);
+      }
+    }
+  }
+  // rotor reference mark (pole 0)
+  {
+    const [x, y] = polar(cx, cy, shell1 + (shell2 - shell1) * 0.5, S.angle);
+    circle(ctx, x, y, 3, null, 0, PALETTE.sig.rotor);
+  }
+
+  // ---- drum interior, lifters, charge ----
+  const ri = r * 0.7;
+  circle(ctx, cx, cy, ri, null, 0, '#0b0b0b');
+  ctx.fillStyle = PALETTE.steel1;
+  for (let i = 0; i < LIFTERS; i++) {
+    const a = S.angle + i * TWO_PI / LIFTERS, w = 0.035;
+    ctx.beginPath();
+    const pts = [[ri, a - w], [ri * 0.94, a - w * 0.6], [ri * 0.94, a + w * 0.6], [ri, a + w]];
+    pts.forEach(([rad, ang], n) => { const [x, y] = polar(cx, cy, rad, ang); if (n) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    ctx.closePath(); ctx.fill();
+  }
+  if (layers.material) {
+    const ores = [PALETTE.ore1, PALETTE.ore2, PALETTE.ore3];
+    ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, ri, 0, TWO_PI); ctx.clip();
+    for (const q of S.particles) {
+      const x = cx + q.x * ri, y = cy + q.y * ri, rad = q.radius * ri;
+      circle(ctx, x, y, rad, null, 0, ores[q.tone]);
+      circle(ctx, x - rad * 0.3, y - rad * 0.3, rad * 0.35, null, 0, 'rgba(255,255,255,.18)');
+    }
+    ctx.restore();
+  }
+
+  // ---- field axes ----
+  if (layers.fields) {
+    const theta = p * S.angle, mag = Math.hypot(sig.alpha, sig.beta);
+    const currentAngle = mag > 1e-8 ? Math.atan2(sig.beta, sig.alpha) : theta;
+    const statorMech = S.angle + wrapPi(currentAngle - theta) / p;
+    const rotorLength = r * 0.5 * clamp(S.flux / 1.5, 0, 1), statorLength = r * 0.6 * clamp(mag / (base * 1.5), 0, 1);
+    circle(ctx, cx, cy, 4, null, 0, PALETTE.muted);
+    if (rotorLength > 3) { const [x, y] = polar(cx, cy, rotorLength, S.angle); arrow(ctx, cx, cy, x, y, PALETTE.sig.rotor, 3); addHit(machineHits, cx, cy, x, y, 'rotorAxis'); }
+    if (statorLength > 3) { const [x, y] = polar(cx, cy, statorLength, statorMech); arrow(ctx, cx, cy, x, y, PALETTE.sig.stator, 3); addHit(machineHits, cx, cy, x, y, 'statorAxis'); }
+  }
+
+  // ---- direction & numbers ----
+  ctx.font = font(12); ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = PALETTE.muted;
+  ctx.fillText(`n ${fmt(S.speed, 2)} ${unit('rpm')}`, 10, 10);
+  ctx.fillText(`f ${fmt(sig.frequency, 2)} ${unit('Hz')}`, 10, 26);
+  ctx.textAlign = 'right';
+  ctx.fillText(`2p = ${2 * p}`, W - 10, 10);
+  if (Math.abs(S.speed) > 0.05) {
+    const dir = Math.sign(S.speed), R = r * 1.04, a0 = -Math.PI / 2 - 0.5, a1 = -Math.PI / 2 - 0.15;
+    ctx.strokeStyle = PALETTE.muted; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, R, dir > 0 ? a1 : a0, dir > 0 ? a0 : a1, dir > 0); ctx.stroke();
+    const end = dir > 0 ? a0 : a1, tx = cx + Math.cos(end) * R, ty = cy + Math.sin(end) * R;
+    const tangent = end + (dir > 0 ? -Math.PI / 2 : Math.PI / 2);
+    ctx.fillStyle = PALETTE.muted; ctx.beginPath(); ctx.moveTo(tx + Math.cos(tangent) * 6, ty + Math.sin(tangent) * 6);
+    ctx.lineTo(tx + Math.cos(tangent + 2.5) * 6, ty + Math.sin(tangent + 2.5) * 6); ctx.lineTo(tx + Math.cos(tangent - 2.5) * 6, ty + Math.sin(tangent - 2.5) * 6); ctx.closePath(); ctx.fill();
+  }
+}
+
+/* ==========================================================================
+ * vectors.js — phase, Clarke, Park and resultant current vectors in the
+ * stationary electrical frame (α to the right, β up), plus the cos φ gauge.
+ * ========================================================================== */
+
+const vectorHits = [];
+
+function drawVector(ctx, cx, cy, scale, x, y, color, label, key, width) {
+  if (Math.hypot(x, y) * scale < 2) return;
+  const ex = cx + x * scale, ey = cy - y * scale;
+  arrow(ctx, cx, cy, ex, ey, color, width || 2.5);
+  ctx.fillStyle = color; ctx.font = font(12, 600); ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText(label, ex + 4, ey - 3);
+  if (key) addHit(vectorHits, cx, cy, ex, ey, key);
+}
+
+function drawAngleMarkers(ctx, cx, cy, r, S) {
+  const sig = S.signals, theta = wrap(S.poles * S.angle, TWO_PI), mag = Math.hypot(sig.alpha, sig.beta);
+  const current = mag > 1e-8 ? Math.atan2(sig.beta, sig.alpha) : theta, delta = wrapPi(current - theta);
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = PALETTE.sig.phaseAlight; ctx.beginPath(); ctx.arc(cx, cy, r * 0.22, 0, -theta, true); ctx.stroke();
+  if (mag > 1e-8) { ctx.strokeStyle = PALETTE.sig.returnPower; ctx.beginPath(); ctx.arc(cx, cy, r * 0.32, -theta, -(theta + delta), delta > 0); ctx.stroke(); }
+  const dx = cx + Math.cos(theta) * r * 0.98, dy = cy - Math.sin(theta) * r * 0.98;
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = PALETTE.dim; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(dx, dy); ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = font(12); ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillStyle = PALETTE.sig.phaseAlight; ctx.fillText(`θe = ${fmt(theta * 180 / Math.PI, 1)}°`, 10, 10);
+  ctx.fillStyle = PALETTE.sig.returnPower; ctx.fillText(`δ = ${fmt(delta * 180 / Math.PI, 1)}°`, 10, 26);
+  ctx.fillStyle = PALETTE.muted; ctx.textBaseline = 'bottom'; ctx.fillText('d', dx + 4, dy - 2);
+  ctx.restore();
+}
+
+function drawDegreeScale(ctx, cx, cy, r) {
+  ctx.save(); ctx.font = font(10); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let deg = 0; deg < 360; deg += 15) {
+    const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), major = deg % 30 === 0;
+    ctx.strokeStyle = major ? PALETTE.dim : PALETTE.line; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx + (r + 3) * c, cy - (r + 3) * s); ctx.lineTo(cx + (r + (major ? 9 : 6)) * c, cy - (r + (major ? 9 : 6)) * s); ctx.stroke();
+    if (major) { ctx.fillStyle = PALETTE.dim; ctx.fillText(`${deg}°`, cx + (r + 20) * c, cy - (r + 20) * s); }
+  }
+  ctx.textAlign = 'left'; ctx.fillStyle = PALETTE.dim;
+  ctx.fillText('1.0 IN', cx + r / 1.5 + 3, cy + 10); ctx.fillText('1.5 IN', cx + r + 3, cy + 10);
+  ctx.restore();
+}
+
+function drawPowerFactorGauge(ctx, W, H, S) {
+  const s = S.signals, R = Math.min(46, W * 0.11), gx = 22 + R, gy = H - 30;
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,8,8,.92)'; ctx.strokeStyle = PALETTE.line; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.rect(gx - R - 14, gy - R - 26, 2 * R + 28, R + 48); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = PALETTE.lineStrong; ctx.beginPath(); ctx.arc(gx, gy, R, Math.PI, 0); ctx.stroke();
+  ctx.beginPath(); ctx.arc(gx, gy, R, 0, Math.PI); ctx.setLineDash([2, 3]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(gx - R, gy); ctx.lineTo(gx + R, gy); ctx.stroke();
+  ctx.font = font(9.5); ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = PALETTE.dim;
+  for (const v of [-1, 0, 1]) { const x = gx + v * R; ctx.beginPath(); ctx.moveTo(x, gy - 3); ctx.lineTo(x, gy + 3); ctx.stroke(); ctx.fillText(String(v), x, gy + 5); }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = PALETTE.sig.cosPhi; ctx.font = font(11, 600);
+  const label = s.cosPhi === null ? `cos φ: ${tr('pfUndefined')}` : `cos φ ${fmt(s.cosPhi, 3)} · ${tr(Math.abs(s.phi) < 0.01 ? 'pfUnity' : s.phi < 0 ? 'pfLag' : 'pfLead')}`;
+  ctx.fillText(label, gx - R - 8, gy - R - 10);
+  if (s.cosPhi !== null) {
+    const ex = gx + R * Math.cos(s.phi), ey = gy - R * Math.sin(s.phi);
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = PALETTE.sig.cosPhi; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex, gy); ctx.stroke(); ctx.setLineDash([]);
+    arrow(ctx, gx, gy, ex, ey, PALETTE.sig.cosPhi, 2);
+    circle(ctx, ex, gy, 3, null, 0, PALETTE.sig.cosPhi);
+  }
+  ctx.restore();
+}
+
+function drawVectors(canvas, S, layers) {
+  const ctx = canvas.getContext('2d'), W = canvas._w, H = canvas._h;
+  if (!W || !H) return;
+  vectorHits.length = 0;
+  const sig = S.signals, base = configuration(S.poles).nominal.statorCurrent;
+  ctx.fillStyle = PALETTE.inset; ctx.fillRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2, r = Math.min(W, H) * 0.34, scale = r / (base * 1.5);
+  circle(ctx, cx, cy, r / 1.5, PALETTE.line, 1, null);
+  circle(ctx, cx, cy, r, PALETTE.lineStrong, 1, null);
+  drawDegreeScale(ctx, cx, cy, r);
+  ctx.strokeStyle = PALETTE.line; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy); ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r); ctx.stroke();
+  ctx.fillStyle = PALETTE.muted; ctx.font = font(12, 600); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('α', cx + r + 4, cy - 4); ctx.fillText('β', cx + 5, cy - r - 4);
+  if (layers.angles) drawAngleMarkers(ctx, cx, cy, r, S);
+  if (layers.phases) {
+    [{ v: sig.ia, a: 0, c: PALETTE.sig.phaseA, l: 'A' }, { v: sig.ib, a: TWO_PI / 3, c: PALETTE.sig.phaseB, l: 'B' }, { v: sig.ic, a: -TWO_PI / 3, c: PALETTE.sig.phaseC, l: 'C' }]
+      .forEach(p => { const m = 2 * p.v / 3; drawVector(ctx, cx, cy, scale, m * Math.cos(p.a), m * Math.sin(p.a), p.c, p.l, null, 2); });
+  }
+  if (layers.clarke) {
+    drawVector(ctx, cx, cy, scale, sig.alpha, 0, PALETTE.sig.alpha, 'Iα', 'clarkeAxis');
+    drawVector(ctx, cx, cy, scale, 0, sig.beta, PALETTE.sig.beta, 'Iβ', 'clarkeAxis');
+  }
+  if (layers.park) {
+    const a = S.poles * S.angle;
+    drawVector(ctx, cx, cy, scale, S.id * Math.cos(a), S.id * Math.sin(a), PALETTE.sig.d, 'Id', 'parkAxis');
+    drawVector(ctx, cx, cy, scale, -S.iq * Math.sin(a), S.iq * Math.cos(a), PALETTE.sig.q, 'Iq', 'parkAxis');
+  }
+  if (layers.result) drawVector(ctx, cx, cy, scale, sig.alpha, sig.beta, PALETTE.text, 'I', 'resultAxis', 3);
+  if (layers.powerFactor) drawPowerFactorGauge(ctx, W, H, S);
+}
+
+/* ==========================================================================
+ * graph.js — combined trend graph (each trace scaled to ±150 % of its nominal).
+ * ========================================================================== */
+
+function graphRange(S, windowSeconds) { const end = Math.max(S.time, windowSeconds); return { start: end - windowSeconds, end }; }
+function graphBounds(W, H) { return { left: 48, top: 30, width: Math.max(1, W - 62), height: Math.max(1, H - 58) }; }
+function signalScale(S, d) { return configuration(S.poles).nominal[d.scale]; }
+/** Vertical position of a value; yr = {lo, hi} in fractions of nominal. */
+function traceY(b, value, scale, yr) { return b.top + (yr.hi - value / scale) / (yr.hi - yr.lo) * b.height; }
+
+/** "Nice" grid step for a span (1, 2, 2.5, 5 × 10^k). */
+function niceStep(span, target) {
+  const raw = span / target, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+}
+
+/**
+ * Y range for the visible traces. Fixed mode: ±150 % of nominal.
+ * Auto mode: min/max of the visible (normalised) samples with padding, rounded to the grid;
+ * the range grows at once and shrinks only when the data use less than 85 % of it (no jitter).
+ */
+function graphYRange(S, H, view, range, chosen) {
+  if (!view.yAuto || !chosen.length) return { lo: -1.5, hi: 1.5 };
+  let lo = Infinity, hi = -Infinity;
+  const first = Math.max(H.start, findHistoryIndex(H, range.start)), last = Math.min(H.samples.length, findHistoryIndex(H, range.end) + 1);
+  const stride = Math.max(1, Math.floor((last - first) / 1500));
+  for (const d of chosen) {
+    const scale = signalScale(S, d);
+    for (let i = first; i < last; i += stride) {
+      const v = H.samples[i][d.key];
+      if (v === null || !Number.isFinite(v)) continue;
+      const n = v / scale; if (n < lo) lo = n; if (n > hi) hi = n;
+    }
+  }
+  if (!Number.isFinite(lo)) return view.yr || { lo: -1.5, hi: 1.5 };
+  const pad = Math.max((hi - lo) * 0.08, 0.05);
+  lo -= pad; hi += pad;
+  if (hi - lo < 0.2) { const m = (hi + lo) / 2; lo = m - 0.1; hi = m + 0.1; }
+  const step = niceStep(hi - lo, 10);
+  const target = { lo: Math.floor(lo / step) * step, hi: Math.ceil(hi / step) * step };
+  const cur = view.yr;
+  if (cur && target.lo >= cur.lo && target.hi <= cur.hi && (target.hi - target.lo) > 0.85 * (cur.hi - cur.lo)) return cur;
+  return target;
+}
+
+function drawGraphGrid(ctx, W, H, range, b, windowSeconds, yr) {
+  ctx.fillStyle = PALETTE.inset; ctx.fillRect(0, 0, W, H);
+  ctx.font = font(10.5); ctx.lineWidth = 1;
+  const step = niceStep(yr.hi - yr.lo, 6), digits = step * 100 < 1 ? 1 : 0;
+  for (let v = Math.ceil(yr.lo / step - 1e-9) * step; v <= yr.hi + 1e-9; v += step) {
+    const y = traceY(b, v, 1, yr), rounded = Math.abs(v) < 1e-9 ? 0 : v;
+    ctx.strokeStyle = rounded === 0 ? PALETTE.dim : PALETTE.line;
+    ctx.beginPath(); ctx.moveTo(b.left, y); ctx.lineTo(b.left + b.width, y); ctx.stroke();
+    ctx.fillStyle = PALETTE.dim; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(`${rounded > 0 ? '+' : ''}${fmt(rounded * 100, digits)}%`, b.left - 6, y);
+  }
+  for (const v of [-1, 1]) {
+    if (v <= yr.lo || v >= yr.hi) continue;
+    const y = traceY(b, v, 1, yr);
+    ctx.strokeStyle = PALETTE.lineStrong; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(b.left, y); ctx.lineTo(b.left + b.width, y); ctx.stroke(); ctx.setLineDash([]);
+  }
+  for (let i = 0; i <= 5; i++) {
+    const f = i / 5, x = b.left + f * b.width, time = range.start + f * (range.end - range.start);
+    ctx.strokeStyle = PALETTE.line; ctx.beginPath(); ctx.moveTo(x, b.top); ctx.lineTo(x, b.top + b.height); ctx.stroke();
+    ctx.fillStyle = PALETTE.dim; ctx.textAlign = i === 0 ? 'left' : i === 5 ? 'right' : 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(windowSeconds < 1 ? `${fmt(time * 1000, 0)} ${unit('ms')}` : `${fmt(time, windowSeconds < 5 ? 2 : 1)} ${unit('s')}`, x, b.top + b.height + 6);
+  }
+  ctx.strokeStyle = PALETTE.lineStrong; ctx.strokeRect(b.left + 0.5, b.top + 0.5, b.width - 1, b.height - 1);
+}
+
+function drawTrend(ctx, S, H, d, b, range, yr) {
+  const samples = H.samples, first = Math.max(H.start, findHistoryIndex(H, range.start) - 1);
+  const last = Math.min(samples.length, findHistoryIndex(H, range.end) + 1);
+  const stride = Math.max(1, Math.floor((last - first) / (b.width * 2)));
+  const duration = range.end - range.start, scale = signalScale(S, d);
+  ctx.save(); ctx.beginPath(); ctx.rect(b.left, b.top, b.width, b.height); ctx.clip();
+  ctx.strokeStyle = PALETTE.sig[d.color]; ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
+  if (d.dashed) ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  let started = false;
+  const plot = sample => {
+    const v = sample[d.key];
+    if (v === null || !Number.isFinite(v)) { started = false; return; }
+    const x = b.left + (sample.time - range.start) / duration * b.width, y = traceY(b, v, scale, yr);
+    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+  };
+  for (let i = first; i < last; i += stride) plot(samples[i]);
+  if (last > first) plot(samples[last - 1]);
+  ctx.stroke(); ctx.restore();
+}
+
+function drawTripMarkers(ctx, S, b, range) {
+  ctx.save(); ctx.beginPath(); ctx.rect(b.left, b.top - 8, b.width, b.height + 8); ctx.clip();
+  for (const e of S.events) {
+    if (e.time < range.start || e.time > range.end) continue;
+    const x = b.left + (e.time - range.start) / (range.end - range.start) * b.width;
+    const xs = b.left + (e.startTime - range.start) / (range.end - range.start) * b.width;
+    ctx.fillStyle = 'rgba(242,177,60,.12)'; ctx.fillRect(Math.max(b.left, xs), b.top, x - Math.max(b.left, xs), b.height);
+    ctx.strokeStyle = PALETTE.trip; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, b.top); ctx.lineTo(x, b.top + b.height); ctx.stroke();
+    ctx.fillStyle = PALETTE.trip; ctx.beginPath(); ctx.moveTo(x - 5, b.top - 6); ctx.lineTo(x + 5, b.top - 6); ctx.lineTo(x, b.top + 2); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** Legend of the selected signals across the top of the plot (also ends up in exported images). */
+function drawLegend(ctx, defs, b) {
+  ctx.font = font(11, 600); ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  let x = b.left, y = 12;
+  for (const d of defs) {
+    const w = ctx.measureText(d.label).width + 26;
+    if (x + w > b.left + b.width) break;
+    ctx.fillStyle = PALETTE.sig[d.color]; ctx.fillRect(x, y - 1.5, 14, 3);
+    ctx.fillStyle = PALETTE.muted; ctx.fillText(d.label, x + 18, y);
+    x += w;
+  }
+}
+
+function drawGraph(canvas, S, H, view) {
+  const ctx = canvas.getContext('2d'), W = canvas._w, Hh = canvas._h;
+  if (!W || !Hh) return;
+  const range = graphRange(S, view.window), b = graphBounds(W, Hh);
+  const chosen = SIGNALS.filter(d => view.selected.has(d.key));
+  const yr = view.yr = graphYRange(S, H, view, range, chosen);
+  drawGraphGrid(ctx, W, Hh, range, b, view.window, yr);
+  for (const d of chosen) drawTrend(ctx, S, H, d, b, range, yr);
+  drawTripMarkers(ctx, S, b, range);
+  drawLegend(ctx, chosen, b);
+  if (view.cursorTime !== null) {
+    const f = (view.cursorTime - range.start) / (range.end - range.start);
+    if (f >= 0 && f <= 1) {
+      const x = b.left + f * b.width;
+      ctx.save(); ctx.strokeStyle = PALETTE.text; ctx.globalAlpha = .7; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(x, b.top); ctx.lineTo(x, b.top + b.height); ctx.stroke(); ctx.restore();
+      const sample = nearestSample(H, view.cursorTime);
+      if (sample) for (const d of chosen) {
+        const v = sample[d.key]; if (v === null || !Number.isFinite(v)) continue;
+        const y = traceY(b, v, signalScale(S, d), yr);
+        if (y >= b.top && y <= b.top + b.height) circle(ctx, x, y, 3, PALETTE.inset, 1.5, PALETTE.sig[d.color]);
+      }
+    }
+  }
+}
+
+/** Pointer handling: moves the cursor and returns the tooltip content, if any. */
+function graphPointer(event, canvas, S, H, view) {
+  const rect = canvas.getBoundingClientRect(), b = graphBounds(rect.width, rect.height), range = graphRange(S, view.window);
+  const x = event.clientX - rect.left, y = event.clientY - rect.top, f = clamp((x - b.left) / b.width, 0, 1);
+  view.cursorTime = range.start + f * (range.end - range.start);
+  const reach = event.pointerType === 'touch' ? 16 : 8;
+  let closestEvent = null, eventDistance = reach;
+  for (const e of S.events) {
+    if (e.time < range.start || e.time > range.end) continue;
+    const d = Math.abs(x - (b.left + (e.time - range.start) / (range.end - range.start) * b.width));
+    if (d < eventDistance) { eventDistance = d; closestEvent = e; }
+  }
+  if (closestEvent) return { kind: 'trip', text: `${tr('tripped')}: ${tr(closestEvent.reason)}\n${tr('eventTime')}: ${fmt(closestEvent.time, 3)} ${unit('s')}\n${tr('conditionStart')}: ${fmt(closestEvent.startTime, 3)} ${unit('s')}\n${tr('delay')}: ${fmt(closestEvent.delay, 3)} ${unit('s')}` };
+  const sample = nearestSample(H, view.cursorTime);
+  if (!sample) return null;
+  let closest = null, distance = reach + 1;
+  for (const d of SIGNALS) {
+    if (!view.selected.has(d.key) || sample[d.key] === null || !Number.isFinite(sample[d.key])) continue;
+    const delta = Math.abs(y - traceY(b, sample[d.key], signalScale(S, d), view.yr || { lo: -1.5, hi: 1.5 }));
+    if (delta < distance) { distance = delta; closest = d; }
+  }
+  return closest ? { text: `${closest.label}\n${tr(closest.desc)}\n${fmt(sample[closest.key], 3)} ${unit(closest.unit)}` } : null;
+}
+
+/* ==========================================================================
+ * cyclo.js — "Thyristors control" views: schematic, cabinet, conduction
+ * timing and converter currents. Views are rebuilt only when their input
+ * changes (conduction signature or history version).
+ * ========================================================================== */
+
+const CC_WINDOWS = [0.02, 0.05, 0.1, 0.2, 0.5, 1];
+const ccView = { schematicKey: '', timingKey: '', timingAt: 0, chartKey: '', chart: null, timing: null, window: 0.05 };
+function ccPhaseColors() { return [PALETTE.sig.phaseA, PALETTE.sig.phaseB, PALETTE.sig.phaseC]; }
+/* Colours of the six supply-pair sectors (R→S, R→T, S→T, S→R, T→R, T→S). */
+const CC_SECTOR_COLORS = ['#e04848', '#e08a2e', '#c9b63a', '#4fae6a', '#3f8fd0', '#8a63d2'];
+
+/** Conduction signature of a snapshot; unchanged signature ⇒ no redraw. */
+function ccSignature(snap) {
+  return snap.states.map(o => o.map(b => `${b.p}${b.n}${b.group}${b.gate >= 0 ? 'g' : ''}`).join('.')).join('|') + snap.groups + LANG;
+}
+
+/* ---------- schematic (SVG) ---------- */
+
+function ccSchematic(snap) {
+  const W = 600, row = 185, H = 26 + 3 * row, cols = ccPhaseColors(), off = PALETTE.dim, wire = PALETTE.lineStrong, halo = PALETTE.inset;
+  const ff = FONT.replace(/"/g, "'");
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${tr('ccSchematic')}" style="display:block;min-width:520px;width:100%;font-family:${ff}">`;
+  s += `<text x="10" y="17" fill="${PALETTE.dim}" font-size="11">${tr('ccIllustrative')}</text>`;
+  const n = ['R', 'S', 'T'];
+  for (let o = 0; o < 3; o++) {
+    const y = 26 + o * row;
+    s += `<text x="8" y="${y + 14}" fill="${cols[o]}" font-size="14" font-weight="700">${'ABC'[o]}</text>`;
+    for (let g = 0; g < snap.groups; g++) {
+      const x = 40 + g * 270, b = snap.states[o][g];
+      s += `<text x="${x}" y="${y + 13}" fill="${PALETTE.muted}" font-size="10">G${g + 1} (${g ? '−30°' : '0°'})</text>`;
+      for (let p = 0; p < 3; p++) {
+        const yy = y + 38 + p * 31, active = b.p === p || b.n === p;
+        s += `<text x="${x}" y="${yy + 4}" fill="${PALETTE.muted}" font-size="10">${n[p]}</text><line x1="${x + 17}" y1="${yy}" x2="${x + 194}" y2="${yy}" stroke="${active ? cols[o] : wire}" stroke-width="${active ? 2.5 : 1}"/>`;
+      }
+      for (const sign of [1, -1]) {
+        const bx = x + (sign > 0 ? 45 : 125);
+        s += `<text x="${bx}" y="${y + 24}" fill="${PALETTE.muted}" font-size="10">${sign > 0 ? 'P (+)' : 'N (−)'}</text>`;
+        s += `<line x1="${bx + 9}" y1="${y + 28}" x2="${bx + 9}" y2="${y + 142}" stroke="${wire}"/><line x1="${bx + 39}" y1="${y + 28}" x2="${bx + 39}" y2="${y + 142}" stroke="${wire}"/>`;
+        for (let p = 0; p < 3; p++) for (let side = 0; side < 2; side++) {
+          const xx = bx + 9 + side * 30, yy = y + 38 + p * 31, on = b.group === sign && (side === 0 ? b.p === p : b.n === p);
+          const color = on ? cols[o] : off, label = ccThyristorId(sign, side, p);
+          const pts = side === 0 ? `${xx - 6},${yy - 7} ${xx + 6},${yy - 7} ${xx},${yy + 3}` : `${xx - 6},${yy + 7} ${xx + 6},${yy + 7} ${xx},${yy - 3}`;
+          const bar = side === 0 ? yy + 5 : yy - 5;
+          // Labels sit above the valve, offset outward, with a dark halo so they stay readable over wires.
+          const lx = side === 0 ? xx - 8 : xx + 8, anchor = side === 0 ? 'end' : 'start';
+          s += `<g><title>G${g + 1} ${label} • ${n[p]} • ${tr(on ? 'ccConducting' : 'ccOff')}</title>`
+            + `<polygon points="${pts}" fill="${on ? color : halo}" stroke="${color}" stroke-width="1.4"/>`
+            + `<line x1="${xx - 7}" y1="${bar}" x2="${xx + 7}" y2="${bar}" stroke="${color}" stroke-width="1.5"/>`
+            + `<text x="${lx}" y="${yy - 8}" text-anchor="${anchor}" font-size="${on ? 9.5 : 8.5}" font-weight="${on ? 700 : 400}" fill="${on ? '#fff' : off}" stroke="${halo}" stroke-width="3" paint-order="stroke">${label}</text></g>`;
+        }
+        s += `<line x1="${bx + 9}" y1="${y + 142}" x2="${bx + 39}" y2="${y + 142}" stroke="${b.group === sign ? cols[o] : wire}" stroke-width="${b.group === sign ? 2.5 : 1}"/>`;
+      }
+      s += `<path d="M ${x + 94} ${y + 142} L ${x + 220} ${y + 142} L ${x + 220} ${y + 130}" fill="none" stroke="${b.p >= 0 ? cols[o] : wire}" stroke-width="2"/><text x="${x + 195}" y="${y + 126}" fill="${cols[o]}" font-size="10">→ ${'ABC'[o]}</text>`;
+      s += `<text x="${x}" y="${y + 165}" fill="${PALETTE.muted}" font-size="10">${b.p < 0 ? tr('ccNoPair') : `${n[b.p]} → ${n[b.n]}  ${b.group > 0 ? 'P' : 'N'}${b.gate >= 0 ? ' • gate' : ''}`}</text>`;
+    }
+  }
+  return s + '</svg>';
+}
+
+function ccCabinet(snap) {
+  let html = '<div class="cc-cab">';
+  for (let o = 0; o < 3; o++) {
+    html += `<div class="cc-cab-phase" style="border-top:3px solid ${ccPhaseColors()[o]}"><b>${tr('ccPhaseWord')} ${'ABC'[o]}</b>`;
+    for (let g = 0; g < snap.groups; g++) {
+      const b = snap.states[o][g];
+      html += `<div class="cc-cab-group">G${g + 1} ${g ? '−30°' : '0°'}</div>`;
+      for (const sign of [1, -1]) {
+        html += `<div class="cc-cab-group">${sign > 0 ? 'P (+)' : 'N (−)'}</div><div class="cc-cab-grid">`;
+        for (let p = 0; p < 3; p++) for (let side = 0; side < 2; side++) {
+          const on = b.group === sign && (side === 0 ? b.p === p : b.n === p);
+          html += `<span class="cc-valve${on ? ' on' : ''}" title="${'RST'[p]} • ${tr(on ? 'ccConducting' : 'ccOff')}">${ccThyristorId(sign, side, p)}</span>`;
+        }
+        html += '</div>';
+      }
+    }
+    html += '</div>';
+  }
+  return html + '</div>';
+}
+
+/* ---------- shared time axis for the two canvases ---------- */
+
+const CC_LEFT = 64, CC_RIGHT = 12;
+function ccTimeAxis(c, W, top, bottom, start, span) {
+  c.font = font(10.5); c.textBaseline = 'top';
+  for (let i = 0; i <= 4; i++) {
+    const x = CC_LEFT + i * (W - CC_LEFT - CC_RIGHT) / 4, t = start + i * span / 4;
+    c.strokeStyle = PALETTE.line; c.lineWidth = 1; c.beginPath(); c.moveTo(x, top); c.lineTo(x, bottom); c.stroke();
+    c.fillStyle = PALETTE.dim; c.textAlign = i === 0 ? 'left' : i === 4 ? 'right' : 'center';
+    c.fillText(span < 1 ? `${fmt(t * 1000, 0)} ${unit('ms')}` : `${fmt(t, 2)} ${unit('s')}`, x, bottom + 5);
+  }
+}
+
+/* ---------- conduction timing (canvas) ----------
+ * One lane per output phase and bridge group. Upper bar = P bridge (positive
+ * current), lower bar = N bridge. Segment colour = supply pair (sector);
+ * the label names the two conducting thyristors when there is room. */
+
+function ccTimingLanes(groups) {
+  const lanes = [];
+  for (let o = 0; o < 3; o++) for (let g = 0; g < groups; g++) lanes.push({ o, g });
+  return lanes;
+}
+
+function ccTiming(S, canvas) {
+  const W = canvas._w, H = canvas._h, c = canvas.getContext('2d');
+  if (!W || !H) return;
+  const groups = configuration(S.poles).pulses === 12 ? 2 : 1, lanes = ccTimingLanes(groups), span = ccView.window;
+  const end = S.time, start = end - span, top = 6, bottom = H - 20, laneH = (bottom - top) / lanes.length;
+  const xOf = t => CC_LEFT + (t - start) / span * (W - CC_LEFT - CC_RIGHT);
+  c.fillStyle = PALETTE.inset; c.fillRect(0, 0, W, H);
+  ccTimeAxis(c, W, top, bottom, start, span);
+  const h = CC.history;
+  let lo = 0, hi = h.length - 1;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (h[m].t < start) lo = m + 1; else hi = m; }
+  // collect segments per lane and bridge in one pass
+  const segs = lanes.map(() => ({ P: [], N: [] })), open = lanes.map(() => null);
+  for (let i = lo; i < h.length && h[i].t <= end; i++) {
+    const z = h[i];
+    lanes.forEach((lane, k) => {
+      const b = z.states[lane.o] && z.states[lane.o][lane.g];
+      const key = b && b.p >= 0 ? `${b.group}|${b.sector}` : null, cur = open[k];
+      if (cur && cur.key === key) { cur.t1 = z.t; return; }
+      if (cur) segs[k][cur.bridge].push(cur);
+      open[k] = key ? { key, bridge: b.group > 0 ? 'P' : 'N', sector: b.sector, p: b.p, n: b.n, sign: b.group, t0: z.t, t1: z.t } : null;
+    });
+  }
+  open.forEach((cur, k) => { if (cur) segs[k][cur.bridge].push(cur); });
+
+  c.font = font(10, 700); c.textBaseline = 'middle';
+  const cols = ccPhaseColors();
+  lanes.forEach((lane, k) => {
+    const y0 = top + k * laneH, barH = Math.max(6, Math.min(13, laneH * 0.36)), yP = y0 + laneH * 0.5 - barH - 1, yN = y0 + laneH * 0.5 + 1;
+    if (k) { c.strokeStyle = PALETTE.line; c.beginPath(); c.moveTo(0, y0); c.lineTo(W, y0); c.stroke(); }
+    c.fillStyle = cols[lane.o]; c.textAlign = 'left'; c.font = font(11, 700);
+    c.fillText(`${'ABC'[lane.o]}${groups > 1 ? ` · G${lane.g + 1}` : ''}`, 6, y0 + laneH / 2 - 6);
+    c.fillStyle = PALETTE.dim; c.font = font(9.5);
+    c.fillText('P', CC_LEFT - 12, yP + barH / 2); c.fillText('N', CC_LEFT - 12, yN + barH / 2);
+    c.fillStyle = PALETTE.surface; c.fillRect(CC_LEFT, yP, W - CC_LEFT - CC_RIGHT, barH); c.fillRect(CC_LEFT, yN, W - CC_LEFT - CC_RIGHT, barH);
+    for (const bridge of ['P', 'N']) for (const sgm of segs[k][bridge]) {
+      const x0 = Math.max(CC_LEFT, xOf(sgm.t0)), x1 = Math.min(W - CC_RIGHT, xOf(sgm.t1 + CC.dt));
+      if (x1 <= x0) continue;
+      const y = bridge === 'P' ? yP : yN;
+      c.fillStyle = CC_SECTOR_COLORS[sgm.sector]; c.fillRect(x0, y, x1 - x0 - 0.5, barH);
+      const label = `${ccThyristorId(sgm.sign, 0, sgm.p)}·${ccThyristorId(sgm.sign, 1, sgm.n)}`;
+      c.font = font(Math.min(10, barH - 1), 700);
+      if (x1 - x0 > c.measureText(label).width + 6) { c.fillStyle = '#000'; c.textAlign = 'center'; c.fillText(label, (x0 + x1) / 2, y + barH / 2 + 0.5); }
+    }
+  });
+  if (!h.length) { c.fillStyle = PALETTE.muted; c.textAlign = 'center'; c.font = font(12); c.fillText(tr('ccNoHistory'), W / 2, H / 2); }
+  ccView.timing = { lanes, segs, start, span, top, laneH, W };
+}
+
+function ccTimingHover(event, canvas) {
+  const q = ccView.timing; if (!q) return '';
+  const r = canvas.getBoundingClientRect(), x = event.clientX - r.left, y = event.clientY - r.top;
+  if (x < CC_LEFT) return '';
+  const k = Math.floor((y - q.top) / q.laneH); if (k < 0 || k >= q.lanes.length) return '';
+  const t = q.start + (x - CC_LEFT) / (q.W - CC_LEFT - CC_RIGHT) * q.span, lane = q.lanes[k];
+  const all = q.segs[k].P.concat(q.segs[k].N), s = all.find(z => t >= z.t0 && t <= z.t1 + CC.dt);
+  const head = `${tr('ccPhaseWord')} ${'ABC'[lane.o]}, G${lane.g + 1} · t = ${fmt(t * 1000, 1)} ${unit('ms')}`;
+  if (!s) return `${head} · ${tr('ccNoPair')}`;
+  return `${head} · ${s.sign > 0 ? 'P' : 'N'}: ${ccThyristorId(s.sign, 0, s.p)} + ${ccThyristorId(s.sign, 1, s.n)} (${'RST'[s.p]} → ${'RST'[s.n]})`;
+}
+
+/* ---------- converter currents (canvas) ---------- */
+
+function ccChartDefs(groups) {
+  const defs = [], cols = ccPhaseColors();
+  for (let o = 0; o < 3; o++) {
+    const phase = 'ABC'[o];
+    defs.push({ key: `I*${phase}`, color: cols[o], width: 2.2, on: true, desc: `${tr('ccSetpoint')} ${phase}`, get: z => z.target[o] });
+    for (let g = 0; g < groups; g++) for (let p = 0; p < 3; p++) {
+      const network = 'RST'[p], hue = (o * 115 + g * 48 + p * 23 + 20) % 360;
+      defs.push({ key: `${phase}·G${g + 1}${network}`, color: `hsl(${hue},70%,66%)`, width: 1.1, on: o === 0,
+        desc: `${tr('ccInputCurrent')} ${network}, ${tr('ccGroup')} ${g + 1}, ${tr('ccPhaseWord').toLowerCase()} ${phase}`, get: z => z.currents[o * z.groups + g][p] });
+    }
+  }
+  return defs;
+}
+
+function ccChart(S, canvas, checks, onToggle) {
+  const groups = configuration(S.poles).pulses === 12 ? 2 : 1, defs = ccChartDefs(groups), span = ccView.window;
+  const signature = defs.map(d => d.key).join(',') + '|' + LANG;
+  if (checks.dataset.signature !== signature) {
+    checks.dataset.signature = signature; checks.textContent = '';
+    for (const d of defs) {
+      const label = document.createElement('label'); label.title = d.desc; label.style.color = d.color;
+      const input = document.createElement('input'); input.type = 'checkbox'; input.dataset.key = d.key;
+      input.checked = d.key in CC.checkState ? CC.checkState[d.key] : d.on;
+      input.addEventListener('change', () => { CC.checkState[d.key] = input.checked; onToggle(); });
+      label.append(input, document.createTextNode(' ' + d.key)); checks.appendChild(label);
+    }
+  }
+  const W = canvas._w, H = canvas._h, c = canvas.getContext('2d');
+  if (!W || !H) return;
+  c.fillStyle = PALETTE.inset; c.fillRect(0, 0, W, H);
+  const enabled = new Set(Array.from(checks.querySelectorAll('input:checked'), x => x.dataset.key));
+  const end = S.time, start = end - span;
+  const history = CC.history.filter(z => z.t >= start && z.t <= end && z.groups === groups);
+  let peak = 0;
+  for (const z of history) for (const d of defs) if (enabled.has(d.key)) peak = Math.max(peak, Math.abs(d.get(z)));
+  const raw = peak * 1.12, exponent = raw > 0 ? Math.pow(10, Math.floor(Math.log10(raw))) : 1, scaled = raw / exponent;
+  const scale = raw > 0 ? (scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10) * exponent : 1;
+  const L = CC_LEFT, R = W - CC_RIGHT, T = 8, B = H - 22;
+  ccTimeAxis(c, W, T, B, start, span);
+  c.font = font(10.5); c.lineWidth = 1;
+  for (let i = -2; i <= 2; i++) {
+    const y = (T + B) / 2 - i * (B - T) / 4;
+    c.strokeStyle = i === 0 ? PALETTE.dim : PALETTE.line; c.beginPath(); c.moveTo(L, y); c.lineTo(R, y); c.stroke();
+    c.fillStyle = PALETTE.dim; c.textAlign = 'right'; c.textBaseline = 'middle'; c.fillText(fmt(i * scale / 2, 2), L - 6, y);
+  }
+  c.save(); c.beginPath(); c.rect(L, T, R - L, B - T); c.clip();
+  const stride = Math.max(1, Math.floor(history.length / ((R - L) * 2)));
+  for (const d of defs) {
+    if (!enabled.has(d.key)) continue;
+    c.strokeStyle = d.color; c.lineWidth = d.width; c.beginPath();
+    for (let i = 0; i < history.length; i += stride) {
+      const z = history[i], x = L + (z.t - start) / span * (R - L), y = (T + B) / 2 - d.get(z) / scale * (B - T) / 2;
+      if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+    }
+    c.stroke();
+  }
+  c.restore();
+  ccView.chart = { defs, history, start, span, L, R, T, B, scale, enabled };
+}
+
+function ccHoverText(event, canvas) {
+  const q = ccView.chart;
+  if (!q || !q.history.length) return '';
+  const box = canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top;
+  const t = q.start + (x - q.L) / (q.R - q.L) * q.span;
+  let lo = 0, hi = q.history.length - 1;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (q.history[m].t < t) lo = m + 1; else hi = m; }
+  const z = q.history[lo];
+  let best = null, dist = Infinity;
+  for (const d of q.defs) {
+    if (!q.enabled.has(d.key)) continue;
+    const dy = Math.abs((q.T + q.B) / 2 - d.get(z) / q.scale * (q.B - q.T) / 2 - y);
+    if (dy < dist) { dist = dy; best = d; }
+  }
+  return best && dist < 18 ? `${best.key}: ${best.desc} = ${fmt(best.get(z), 3)} ${unit('pu')}; t = ${fmt(z.t * 1000, 1)} ${unit('ms')}` : '';
+}
+
+/** Renders the open module. `force` bypasses the change checks (language, resize). */
+function renderCyclo(S, E, force, onToggle) {
+  const snap = ccSnapshot(S, S.time), pulses = configuration(S.poles).pulses;
+  E.ccStatus.textContent = `${pulses}${tr('ccPulse')} • ${tr('ccInput')} 50 ${unit('Hz')} • ${tr('ccOutput')} ${fmt(ccOutputHz(S), 2)} ${unit('Hz')} (${tr('ccSigned')}) • α = ${CC.alpha}° • ${tr('ccOpens')}`;
+  const key = ccSignature(snap);
+  if (force || key !== ccView.schematicKey) {
+    ccView.schematicKey = key;
+    E.ccSchematic.innerHTML = ccSchematic(snap);
+    E.ccCabinet.innerHTML = ccCabinet(snap);
+  }
+  const now = performance.now(), tKey = `${CC.version}|${ccView.window}|${LANG}|${S.poles}`;
+  if (force || (tKey !== ccView.timingKey && now - ccView.timingAt > 100)) {
+    ccView.timingKey = tKey; ccView.timingAt = now;
+    ccTiming(S, E.ccTiming);
+  }
+  const cKey = `${CC.version}|${ccView.window}|${LANG}|${S.poles}|${JSON.stringify(CC.checkState)}`;
+  if (force || cKey !== ccView.chartKey) { ccView.chartKey = cKey; ccChart(S, E.ccChart, E.ccChecks, onToggle); }
+}
+
+/* ==========================================================================
+ * app.js — application controller: welcome screen, generated controls,
+ * rendering loop, persistence, export and keyboard shortcuts.
+ * The model lives in S (state) and H (history). Controls, signal pickers,
+ * annunciator, read-outs and the limits table are generated from the
+ * subsystem registry (core/registry.js).
+ * ========================================================================== */
+
+const STORAGE_KEY = 'gmd-simulator-v3';
+const LAYER_IDS = { material: 'showMaterial', currents: 'showCurrents', fields: 'showFields', phases: 'showPhases', result: 'showResult', powerFactor: 'showPowerFactor', clarke: 'showClarke', park: 'showPark', angles: 'showAngles' };
+const DEFAULT_LAYERS = { material: true, currents: true, fields: true, phases: true, result: true, powerFactor: true, clarke: false, park: false, angles: true };
+
+const App = {
+  S: null, H: null, E: {},
+  view: { window: WINDOWS[10], cursorTime: null, yAuto: true, yr: null, selected: new Set(SIGNALS.filter(d => d.checked).map(d => d.key)) },
+  layers: Object.assign({}, DEFAULT_LAYERS),
+  controls: {}, readouts: {}, annunciator: {},
+  dirty: true, savedAnimation: null, lastFrame: null, accumulator: 0, slowUntil: 0, freshTripUntil: 0, lastTripReason: null, onWelcome: true,
+};
+
+/* ---------- persistence ---------- */
+
+function loadStored() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { return null; } }
+let saveTimer = null;
+function saveSettings() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      const settings = {};
+      for (const k of SETTING_KEYS) settings[k] = App.S[k];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ lang: LANG, settings, layers: App.layers, selected: [...App.view.selected], window: App.view.window, yAuto: App.view.yAuto, ccWindow: ccView.window }));
+    } catch (e) { /* storage unavailable: settings simply are not kept */ }
+  }, 300);
+}
+
+/* ---------- element collection ---------- */
+
+function collectElements() {
+  document.querySelectorAll('[id]').forEach(node => { App.E[node.id] = node; });
+  tooltipEl = App.E.tooltip;
+}
+
+/* ---------- generated parameter controls ---------- */
+
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+function paramLabel(p) { return p.text || tr(p.label); }
+function toSlider(p, v) { return p.log ? Math.log10(v) : v; }
+function fromSlider(p, v) { return p.log ? Math.pow(10, Number(v)) : Number(v); }
+function formatParam(p, v) {
+  if (p.format) return p.format(v);
+  return `${fmt(v, p.digits === undefined ? 2 : p.digits)}${p.unit ? ' ' + unit(p.unit) : ''}`;
+}
+
+/** Builds every parameter control from the registry into its panel container. */
+function buildParamControls() {
+  for (const box of document.querySelectorAll('.params[data-panel]')) {
+    box.textContent = '';
+    for (const p of PARAMS.filter(q => q.panel === box.dataset.panel)) box.appendChild(buildControl(p));
+  }
+}
+
+function buildControl(p) {
+  const wrap = el('div', 'field'), c = { p, wrap };
+  const id = `param-${p.key}`;
+  if (p.type === 'range') {
+    const head = el('div', 'field-head'), label = el('label'), out = el('output');
+    label.htmlFor = id; head.append(label, out);
+    const row = el('div', 'field-row'), input = el('input');
+    input.type = 'range'; input.id = id;
+    input.min = toSlider(p, p.min); input.max = toSlider(p, paramMax(p, App.S)); input.step = p.log ? 0.01 : p.step;
+    row.appendChild(input);
+    input.addEventListener('input', () => setParam(p, fromSlider(p, input.value)));
+    if (p.number) {
+      const num = el('input'); num.type = 'number'; num.step = p.log ? 'any' : p.step; num.setAttribute('aria-label', paramLabel(p));
+      num.addEventListener('change', () => {
+        const v = Number(num.value);
+        if (num.value.trim() === '' || !Number.isFinite(v)) { refreshControl(c, true); return; }
+        setParam(p, clamp(v, p.min, paramMax(p, App.S)));
+      });
+      row.appendChild(num); c.number = num;
+    }
+    wrap.append(head, row);
+    Object.assign(c, { label, out, input });
+  } else if (p.type === 'check') {
+    const label = el('label', 'check'), input = el('input'), text = el('span');
+    input.type = 'checkbox'; input.addEventListener('change', () => setParam(p, input.checked));
+    label.append(input, text); wrap.appendChild(label);
+    Object.assign(c, { input, labelText: text });
+  } else if (p.type === 'choice' || p.type === 'segmented') {
+    const group = el('div', p.type === 'choice' ? 'choices' : 'segmented'); group.setAttribute('role', 'radiogroup');
+    c.radios = []; c.optionLabels = [];
+    for (const [value, key] of p.options) {
+      const label = el('label'), input = el('input'), text = el('span');
+      input.type = 'radio'; input.name = id; input.value = value;
+      input.addEventListener('change', () => { if (input.checked) setParam(p, value); });
+      label.append(input, text); group.appendChild(label);
+      c.radios.push(input); c.optionLabels.push([text, key]);
+    }
+    if (p.type === 'segmented') {
+      const head = el('div', 'field-head'), label = el('span'); head.appendChild(label);
+      const row = el('div', 'field-row'); row.appendChild(group);
+      wrap.append(head, row); c.label = label;
+    } else wrap.appendChild(group);
+  }
+  if (p.hint) { c.hint = el('p', 'hint'); wrap.appendChild(c.hint); }
+  App.controls[p.key] = c;
+  return wrap;
+}
+
+/** Applies a user change: side effects first (bumpless transfer), then the value. */
+function setParam(p, value) {
+  const S = App.S;
+  if (p.onChange && S[p.key] !== value) p.onChange(S, value);
+  S[p.key] = value;
+  if (p.resetsModel) {
+    resetModel();
+    for (const q of PARAMS) if (typeof q.max === 'function') S[q.key] = Math.min(S[q.key], q.max(S));
+  }
+  S.signals = computeSignals(S);
+  refreshControl(App.controls[p.key], true);
+  saveSettings(); invalidate();
+}
+
+function translateControls() {
+  for (const c of Object.values(App.controls)) {
+    const p = c.p;
+    if (c.label) c.label.textContent = paramLabel(p);
+    if (c.labelText) c.labelText.textContent = paramLabel(p);
+    if (c.optionLabels) for (const [node, key] of c.optionLabels) node.textContent = tr(key);
+    if (c.hint) c.hint.textContent = tr(p.hint);
+  }
+}
+
+/** Writes state → control (value, label, enabled state, dynamic maximum). */
+function refreshControl(c, force) {
+  const S = App.S, p = c.p;
+  const enabled = p.enabled ? p.enabled(S) : true;
+  const value = !enabled && p.shown ? p.shown(S) : S[p.key];
+  c.wrap.classList.toggle('disabled', !enabled);
+  if (c.radios) {
+    for (const r of c.radios) { r.checked = r.value === value; r.disabled = !enabled; }
+    return;
+  }
+  if (p.type === 'check') { c.input.checked = !!value; c.input.disabled = !enabled; return; }
+  if (typeof p.max === 'function') {
+    const max = String(toSlider(p, paramMax(p, S)));
+    if (c.input.max !== max) c.input.max = max;
+    if (c.number) c.number.max = paramMax(p, S);
+  }
+  c.input.disabled = !enabled; if (c.number) c.number.disabled = !enabled;
+  if (force || document.activeElement !== c.input) {
+    const v = String(toSlider(p, value));
+    if (c.input.value !== v) c.input.value = v;
+  }
+  if (c.number && (force || document.activeElement !== c.number)) c.number.value = p.log ? Number(value.toPrecision(4)) : Number(value.toFixed(p.digits === undefined ? 2 : p.digits));
+  const text = formatParam(p, value);
+  if (c.out.textContent !== text) c.out.textContent = text;
+}
+
+/* ---------- other generated blocks ---------- */
+
+function buildAnnunciator() {
+  const box = App.E.annunciator; box.textContent = '';
+  for (const p of PROTECTIONS) {
+    const tile = el('div', 'ann'), lamp = el('i', 'lamp'), name = el('span'), detail = el('b'), fill = el('i', 'fill');
+    tile.append(lamp, name, detail, fill); box.appendChild(tile);
+    App.annunciator[p.key] = { tile, name, detail, fill, short: p.short };
+  }
+}
+
+const VECTOR_READOUTS = ['Ia', 'Ib', 'Ic', 'Iα', 'Iβ', 'I0', 'Id', 'Iq', '|I|', 'cos φ'];
+function buildReadouts() {
+  const list = App.E.machineValues; list.textContent = '';
+  const row = (key, cls) => { const r = el('div', 'kv' + (cls ? ' ' + cls : '')), s = el('span'), b = el('b'); r.append(s, b); list.appendChild(r); App.readouts[key] = { row: r, span: s, b }; };
+  row('status', 'status'); row('time');
+  for (const r of READOUTS) row(r.key);
+  App.E.vectorNumbers.textContent = '';
+  App.vectorCells = VECTOR_READOUTS.map(k => { const d = el('div', 'cell'), s = el('span', '', k), b = el('strong'); d.append(s, b); App.E.vectorNumbers.appendChild(d); return b; });
+}
+
+function createSignalGroups() {
+  const box = App.E.signalGroups; box.textContent = '';
+  for (const group of SIGNAL_GROUPS) {
+    const g = el('div', 'group'); g.appendChild(el('h3', '', tr(group)));
+    for (const d of SIGNALS.filter(s => s.group === group)) {
+      const label = el('label', 'signal'), input = el('input'), swatch = el('span', 'swatch'), text = el('span', '', d.label);
+      input.type = 'checkbox'; input.dataset.signal = d.key; input.checked = App.view.selected.has(d.key);
+      swatch.style.background = d.dashed ? `repeating-linear-gradient(90deg, ${PALETTE.sig[d.color]} 0 4px, transparent 4px 6px)` : PALETTE.sig[d.color];
+      text.appendChild(el('small', '', tr(d.desc)));
+      label.append(input, swatch, text); g.appendChild(label);
+    }
+    box.appendChild(g);
+  }
+}
+
+function updateLimitTable() {
+  const cfg = configuration(App.S.poles), body = App.E.limitRows; body.textContent = '';
+  for (const p of PROTECTIONS) {
+    const L = p.limit; if (!L) continue;
+    const u = unit(L.unit), tr_ = el('tr');
+    for (const v of [tr(L.label), `${fmt(L.nominal(cfg), L.digits)} ${u}`, `${L.symmetric ? '±' : ''}${fmt(L.trip(cfg), L.digits)} ${u}`]) tr_.appendChild(el('td', '', v));
+    body.appendChild(tr_);
+  }
+}
+
+/* ---------- language ---------- */
+
+function applyLanguage() {
+  document.documentElement.lang = LANG;
+  document.title = tr('title');
+  document.querySelectorAll('[data-i]').forEach(node => { node.textContent = tr(node.dataset.i); });
+  App.E.language.value = LANG; App.E.welcomeLanguage.value = LANG;
+  for (const p of PROTECTIONS) { App.annunciator[p.key].name.textContent = tr(p.short); App.annunciator[p.key].tile.title = tr(p.key); }
+  App.readouts.status.span.textContent = tr('status'); App.readouts.time.span.textContent = tr('time');
+  for (const r of READOUTS) App.readouts[r.key].span.textContent = tr(r.key);
+  translateControls();
+  createSignalGroups();
+  updateLimitTable();
+  hideTooltip();
+  ccView.chartKey = ''; App.E.ccChecks.dataset.signature = '';
+  invalidate(true);
+}
+function setLanguage(lang) { LANG = lang; applyLanguage(); saveSettings(); }
+
+/* ---------- commands ---------- */
+
+function startModel() { const S = App.S; if (S.tripped) return; S.run = true; S.paused = false; App.lastFrame = null; invalidate(); }
+function stopModel() { const S = App.S; S.run = false; S.timers = {}; App.lastFrame = null; invalidate(); }
+function togglePause() { App.S.paused = !App.S.paused; App.lastFrame = null; App.accumulator = 0; invalidate(); }
+function stepModel() { if (!App.S.paused) return; advance(App.S, App.H); invalidate(); }
+function tripResetCommand() { resetTrip(App.S); invalidate(); }
+function resetModel() {
+  const S = App.S;
+  resetDynamics(S); S.particles = createParticles(S); App.accumulator = 0; App.lastFrame = null;
+  ccReset(); clearHistory(S, App.H); App.view.cursorTime = null; App.view.yr = null; updateLimitTable(); invalidate(true);
+}
+
+/* ---------- page transitions ---------- */
+
+/** Fades to black, swaps the page, fades back in. */
+function transition(swap) {
+  const fade = App.E.fade, reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches, ms = reduced ? 10 : 380;
+  fade.classList.add('on');
+  setTimeout(() => { swap(); requestAnimationFrame(() => { fade.classList.remove('on'); }); }, ms);
+}
+function showApp() {
+  transition(() => {
+    App.E.welcome.hidden = true; App.E.app.hidden = false; document.body.classList.remove('on-welcome');
+    App.onWelcome = false; hideTooltip(); resizeAll(); App.E.start.focus({ preventScroll: true });
+  });
+}
+function showWelcome() {
+  transition(() => {
+    App.S.paused = true; App.lastFrame = null;
+    App.E.app.hidden = true; App.E.welcome.hidden = false; document.body.classList.add('on-welcome');
+    App.onWelcome = true; hideTooltip(); App.E.enter.focus({ preventScroll: true });
+  });
+}
+
+/* ---------- export ---------- */
+
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function exportCsv() {
+  const S = App.S, H = App.H, range = graphRange(S, App.view.window);
+  const defs = SIGNALS.filter(d => App.view.selected.has(d.key));
+  const lines = [['time_s', ...defs.map(d => `${d.key}${d.unit ? '_' + d.unit.replace('/', 'per') : ''}`)].join(',')];
+  for (let i = Math.max(H.start, findHistoryIndex(H, range.start)); i < H.samples.length; i++) {
+    const s = H.samples[i]; if (s.time > range.end) break;
+    lines.push([s.time.toFixed(3), ...defs.map(d => (s[d.key] === null ? '' : Number(s[d.key]).toPrecision(6)))].join(','));
+  }
+  for (const e of S.events) lines.push(`# trip,${e.time.toFixed(3)},${e.reason},condition_start=${e.startTime.toFixed(3)}`);
+  download(new Blob([lines.join('\n')], { type: 'text/csv' }), `gmd-trends-${S.time.toFixed(1)}s.csv`);
+}
+function exportPng() { App.E.graph.toBlob(b => b && download(b, `gmd-trends-${App.S.time.toFixed(1)}s.png`)); }
+
+/* ---------- interface refresh ---------- */
+
+function statusState() {
+  const S = App.S;
+  if (S.tripped) return ['tripped', tr('tripped')];
+  if (pendingTrip(S)) return ['pending', tr('pending')];
+  if (S.paused && (S.run || S.time > 0)) return ['paused', tr('paused')];
+  if (S.run) return ['running', tr('running')];
+  if (Math.abs(S.speed) > 0.05 || S.ir > 0.05) return ['stopping', tr('stopping')];
+  return ['stopped', tr('stopped')];
+}
+
+function setKv(r, text, units, state) {
+  r.b.textContent = text;
+  if (units) r.b.appendChild(el('small', '', unit(units)));
+  if (state) r.row.dataset.state = state; else delete r.row.dataset.state;
+}
+
+function formatWindow(seconds) {
+  if (seconds < 1) return `${Math.round(seconds * 1000)} ${unit('ms')}`;
+  if (seconds >= 60) return `${fmt(seconds / 60, seconds % 60 ? 1 : 0)} ${unit('min')}`;
+  return `${fmt(seconds, seconds % 1 ? 1 : 0)} ${unit('s')}`;
+}
+
+function updateInterface() {
+  const S = App.S, E = App.E, sig = S.signals, now = performance.now();
+
+  for (const c of Object.values(App.controls)) refreshControl(c, false);
+  for (const node of document.querySelectorAll('[data-monitor]')) { const panel = PANELS[node.dataset.monitor]; if (panel && panel.monitor) node.textContent = panel.monitor(S); }
+
+  E.windowLabel.textContent = formatWindow(App.view.window);
+  E.ccWindowLabel.textContent = formatWindow(ccView.window);
+  E.pauseText.textContent = tr(S.paused && (S.run || S.time > 0) ? 'resume' : 'pause');
+  E.slowBanner.classList.toggle('visible', now < App.slowUntil);
+
+  const degrees = wrap(S.angle, TWO_PI) * 180 / Math.PI;
+  E.angleLabel.textContent = `${fmt(degrees, 1)}°`;
+  E.electricalAngle.textContent = `${fmt(wrap(S.poles * S.angle, TWO_PI) * 180 / Math.PI, 1)}°`;
+  E.angle.disabled = E.angleNumber.disabled = !S.paused;
+  if (document.activeElement !== E.angle) E.angle.value = degrees;
+  if (document.activeElement !== E.angleNumber) E.angleNumber.value = degrees.toFixed(1);
+
+  // trip state
+  const pending = pendingTrip(S);
+  if (S.tripped && S.tripReason !== App.lastTripReason) App.freshTripUntil = now + 3000;
+  App.lastTripReason = S.tripReason;
+  let tripState = '', tripText = tr('healthy');
+  if (S.tripped) { tripState = 'tripped'; tripText = `${tr('tripped')}: ${tr(S.tripReason)}`; }
+  else if (pending) { tripState = 'pending'; tripText = `${tr('pending')}: ${tr(pending.key)} — ${fmt(Math.max(0, TRIP_DELAY - pending.elapsed), 2)} ${unit('s')}`; }
+  E.tripStatus.textContent = tripText;
+  if (tripState) E.tripStatus.dataset.state = tripState; else delete E.tripStatus.dataset.state;
+  E.start.disabled = S.tripped; E.step.disabled = !S.paused; E.tripReset.disabled = !S.tripped;
+
+  const [pillState, pillText] = statusState();
+  E.statusPill.dataset.state = pillState; E.statusPill.textContent = `${pillText} · ${fmt(S.time, 1)} ${unit('s')}`;
+
+  // annunciator: label only; countdown or "tripped" appears only when relevant
+  const active = S.run || S.tripped ? activeConditions(S) : {};
+  for (const p of PROTECTIONS) {
+    const a = App.annunciator[p.key], timer = S.timers[p.key];
+    let state = '';
+    if (S.tripped && S.tripReason === p.key) state = 'tripped';
+    else if (timer) state = 'pending';
+    else if (active[p.key]) state = 'active';
+    if (a.tile.dataset.state !== state) { if (state) a.tile.dataset.state = state; else delete a.tile.dataset.state; }
+    a.tile.classList.toggle('fresh', state === 'tripped' && now < App.freshTripUntil);
+    a.fill.style.width = timer ? `${clamp(timer.elapsed / TRIP_DELAY, 0, 1) * 100}%` : '0';
+    a.detail.textContent = timer ? fmt(Math.max(0, TRIP_DELAY - timer.elapsed), 1) : '';
+  }
+
+  // read-outs from the registry
+  const e = computeElectrical(S);
+  setKv(App.readouts.status, pillText, '', pillState === 'tripped' ? 'tripped' : pillState === 'pending' ? 'pending' : '');
+  App.readouts.status.row.dataset.state = pillState;
+  setKv(App.readouts.time, fmt(S.time, 3), 's');
+  for (const r of READOUTS) {
+    const v = r.value(S, e);
+    const state = r.protection && S.tripped && S.tripReason === r.protection ? 'tripped' : r.protection && S.timers[r.protection] ? 'pending' : '';
+    setKv(App.readouts[r.key], typeof v === 'number' ? fmt(v, r.digits) : v, r.unit, state);
+  }
+  const values = [sig.ia, sig.ib, sig.ic, sig.alpha, sig.beta, sig.zero, sig.id, sig.iq, sig.imag, sig.cosPhi];
+  App.vectorCells.forEach((b, i) => { b.textContent = values[i] === null ? '—' : fmt(values[i], 3); });
+}
+
+function updateCursorLine() {
+  const E = App.E, view = App.view;
+  if (view.cursorTime === null) { E.cursor.textContent = tr('cursorPrompt'); return; }
+  const sample = nearestSample(App.H, view.cursorTime);
+  if (!sample) { E.cursor.textContent = tr('cursorPrompt'); return; }
+  const parts = SIGNALS.filter(d => view.selected.has(d.key)).map(d => `${d.label} ${sample[d.key] === null ? tr('pfUndefined') : fmt(sample[d.key], 3)}${d.unit ? ' ' + unit(d.unit) : ''}`);
+  E.cursor.textContent = '';
+  E.cursor.append(el('b', '', `${tr('recordedTime')} ${fmt(sample.time, 3)} ${unit('s')}`), document.createTextNode('  ' + (parts.length ? parts.join(' · ') : tr('noSignals'))));
+}
+
+/* ---------- rendering ---------- */
+
+let forceCyclo = false;
+function invalidate(force) { App.dirty = true; if (force) forceCyclo = true; }
+function renderGraphOnly() { drawGraph(App.E.graph, App.S, App.H, App.view); updateCursorLine(); }
+
+function renderAll() {
+  const S = App.S, E = App.E;
+  if (!S.signals || App.onWelcome) return;
+  drawMachine(E.machine, S, App.layers);
+  drawVectors(E.vectors, S, App.layers);
+  renderGraphOnly();
+  updateInterface();
+  if (E.ccPanel.open) { renderCyclo(S, E, forceCyclo, () => invalidate()); forceCyclo = false; }
+}
+
+function resizeAll() {
+  for (const c of [App.E.machine, App.E.vectors, App.E.graph, App.E.ccChart, App.E.ccTiming]) resizeCanvas(c);
+  invalidate(true);
+}
+
+/* ---------- main loop ---------- */
+
+const FRAME_BUDGET_MS = 22;
+const CC_ANIMATION = 0.01;
+
+/* ---------- toast ---------- */
+let toastTimer = null;
+function showToast(text, ms = 2500) {
+  const t = App.E.toast; t.textContent = text; t.classList.add('visible');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('visible'), ms);
+}
+function frame(timestamp) {
+  const S = App.S;
+  if (App.lastFrame === null) App.lastFrame = timestamp;
+  const realDelta = Math.min((timestamp - App.lastFrame) / 1000, 0.1);
+  App.lastFrame = timestamp;
+  if (!S.paused && !App.onWelcome) {
+    App.accumulator += realDelta * S.animation;
+    const t0 = performance.now();
+    let steps = 0;
+    while (App.accumulator >= DT) {
+      advance(S, App.H); App.accumulator -= DT; steps++;
+      if ((steps & 63) === 0 && performance.now() - t0 > FRAME_BUDGET_MS) { App.accumulator = 0; App.slowUntil = performance.now() + 1500; break; }
+    }
+    if (steps) App.dirty = true;
+  }
+  if (App.dirty) { App.dirty = false; renderAll(); }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- events ---------- */
+
+function registerEvents() {
+  const E = App.E, S = App.S;
+  E.language.addEventListener('change', e => setLanguage(e.target.value));
+  E.welcomeLanguage.addEventListener('change', e => setLanguage(e.target.value));
+  E.enter.addEventListener('click', showApp);
+  E.help.addEventListener('click', showWelcome);
+  E.start.addEventListener('click', startModel);
+  E.stop.addEventListener('click', stopModel);
+  E.pause.addEventListener('click', togglePause);
+  E.step.addEventListener('click', stepModel);
+  E.tripReset.addEventListener('click', tripResetCommand);
+  E.reset.addEventListener('click', resetModel);
+
+  document.querySelectorAll('input[name=angleMode]').forEach(i => i.addEventListener('change', e => { S.angleMode = e.target.value; saveSettings(); }));
+  E.angle.addEventListener('input', e => { setRotorAngle(S, App.H, Number(e.target.value)); ccReset(); invalidate(); });
+  E.angleNumber.addEventListener('change', e => { setRotorAngle(S, App.H, Number(e.target.value)); ccReset(); invalidate(); });
+
+  E.window.addEventListener('input', e => { App.view.window = WINDOWS[Number(e.target.value)]; App.view.cursorTime = null; App.view.yr = null; saveSettings(); invalidate(); });
+  E.yAuto.addEventListener('change', () => { App.view.yAuto = E.yAuto.checked; App.view.yr = null; saveSettings(); invalidate(); });
+  E.signalGroups.addEventListener('change', e => {
+    const key = e.target.dataset.signal; if (!key) return;
+    if (e.target.checked) App.view.selected.add(key); else App.view.selected.delete(key);
+    App.view.yr = null; saveSettings(); invalidate();
+  });
+  for (const [layer, id] of Object.entries(LAYER_IDS)) E[id].addEventListener('change', () => { App.layers[layer] = E[id].checked; saveSettings(); invalidate(); });
+  E.exportCsv.addEventListener('click', exportCsv);
+  E.exportPng.addEventListener('click', exportPng);
+
+  const graphMove = e => {
+    const tip = graphPointer(e, E.graph, S, App.H, App.view);
+    renderGraphOnly();
+    if (tip) showTooltip(tip.text, e.clientX, e.clientY, tip.kind); else hideTooltip();
+  };
+  E.graph.addEventListener('pointermove', graphMove);
+  E.graph.addEventListener('pointerdown', graphMove);
+  E.graph.addEventListener('pointerleave', () => { App.view.cursorTime = null; hideTooltip(); renderGraphOnly(); });
+  for (const [canvas, hits] of [[E.machine, machineHits], [E.vectors, vectorHits]]) {
+    canvas.addEventListener('pointermove', e => segmentTooltip(e, canvas, hits));
+    canvas.addEventListener('pointerdown', e => segmentTooltip(e, canvas, hits));
+    canvas.addEventListener('pointerleave', hideTooltip);
+  }
+
+  // thyristors control
+  E.ccPanel.addEventListener('toggle', () => {
+    CC.recording = E.ccPanel.open;
+    if (E.ccPanel.open) {
+      // Slow the model down instead of pausing, so the valve switching is visible live.
+      App.savedAnimation = S.animation; S.animation = CC_ANIMATION;
+      App.accumulator = 0; App.lastFrame = null; ccReset();
+      resizeCanvas(E.ccChart); resizeCanvas(E.ccTiming); showToast(tr('toastSlow')); invalidate(true);
+    } else if (App.savedAnimation !== null) {
+      // Restore the previous speed unless the user changed it while the module was open.
+      if (S.animation === CC_ANIMATION) S.animation = App.savedAnimation;
+      App.savedAnimation = null; invalidate();
+    }
+  });
+  E.ccWindow.addEventListener('input', () => { ccView.window = CC_WINDOWS[Number(E.ccWindow.value)]; saveSettings(); invalidate(true); });
+  E.ccClear.addEventListener('click', () => { ccReset(); invalidate(true); });
+  E.ccChart.addEventListener('pointermove', e => { E.ccHover.textContent = ccHoverText(e, E.ccChart); });
+  E.ccTiming.addEventListener('pointermove', e => { E.ccHover.textContent = ccTimingHover(e, E.ccTiming); });
+  [E.ccChart, E.ccTiming].forEach(c => c.addEventListener('pointerleave', () => { E.ccHover.textContent = ''; }));
+
+  // keyboard shortcuts (ignored while typing in a field)
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (App.onWelcome) { if (e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); showApp(); } return; }
+    const tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (tag === 'BUTTON' && e.key === ' ') || tag === 'SUMMARY') return;
+    const k = e.key.toLowerCase();
+    if (e.key === ' ') { e.preventDefault(); togglePause(); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); stepModel(); }
+    else if (k === 's') startModel();
+    else if (k === 'x') stopModel();
+    else if (k === 'r') tripResetCommand();
+  });
+
+  window.addEventListener('resize', resizeAll);
+  if ('ResizeObserver' in window) {
+    const ro = new ResizeObserver(() => resizeAll());
+    [E.machine, E.vectors, E.graph, E.ccChart, E.ccTiming].forEach(c => ro.observe(c));
+  }
+}
+
+/* ---------- start-up ---------- */
+
+function initialize() {
+  collectElements();
+  loadPalette();
+  const stored = loadStored();
+  if (stored) {
+    if (stored.lang && I18N[stored.lang]) LANG = stored.lang;
+    if (stored.layers) Object.assign(App.layers, stored.layers);
+    if (Array.isArray(stored.selected)) App.view.selected = new Set(stored.selected.filter(k => SIGNALS.some(d => d.key === k)));
+    if (WINDOWS.includes(stored.window)) App.view.window = stored.window;
+    if (typeof stored.yAuto === 'boolean') App.view.yAuto = stored.yAuto;
+    if (CC_WINDOWS.includes(stored.ccWindow)) ccView.window = stored.ccWindow;
+  }
+  const defaults = defaultSettings(), settings = {};
+  if (stored && stored.settings) for (const k of SETTING_KEYS) if (k in stored.settings && typeof stored.settings[k] === typeof defaults[k]) settings[k] = stored.settings[k];
+  if (settings.poles !== undefined) settings.poles = clamp(Math.round(settings.poles / POLE_STEP) * POLE_STEP, POLE_MIN, POLE_MAX);
+  App.S = createState(settings);
+  App.H = createHistory();
+  App.S.particles = createParticles(App.S);
+  App.S.signals = computeSignals(App.S);
+  clearHistory(App.S, App.H);
+
+  buildParamControls();
+  buildAnnunciator();
+  buildReadouts();
+  const E = App.E;
+  E.window.value = Math.max(0, WINDOWS.indexOf(App.view.window));
+  E.ccWindow.value = Math.max(0, CC_WINDOWS.indexOf(ccView.window));
+  E.yAuto.checked = App.view.yAuto;
+  document.querySelectorAll('input[name=angleMode]').forEach(r => { r.checked = r.value === App.S.angleMode; });
+  for (const [layer, id] of Object.entries(LAYER_IDS)) E[id].checked = App.layers[layer];
+
+  registerEvents();
+  applyLanguage();
+  requestAnimationFrame(frame);
+  E.enter.focus({ preventScroll: true });
+}
+
+initialize();
+})();
+</script>
+</body>
+</html>
